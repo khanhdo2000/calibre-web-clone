@@ -1,0 +1,134 @@
+{
+  "common": {
+    "calibre": "Calibre",
+    "loading": "Đang tải...",
+    "error": "Lỗi",
+    "back": "Quay lại",
+    "all": "Tất cả",
+    "browse": "Duyệt",
+    "refresh": "Làm mới",
+    "search": "Tìm kiếm",
+    "unknownAuthor": "Tác giả không xác định",
+    "noItemsFound": "Không tìm thấy {{itemLabel}}",
+    "matching": "khớp với \"{{term}}\"",
+    "startingWith": "bắt đầu bằng \"{{char}}\""
+  },
+  "navigation": {
+    "books": "Sách",
+    "discover": "Khám phá",
+    "authors": "Tác giả",
+    "publishers": "Nhà xuất bản",
+    "categories": "Danh mục"
+  },
+  "search": {
+    "placeholder": "Tìm kiếm sách, tác giả, thẻ...",
+    "searching": "Đang tìm kiếm...",
+    "noQuery": "Nhập từ khóa tìm kiếm vào thanh tìm kiếm ở trên.",
+    "noResults": "Không tìm thấy kết quả",
+    "tryDifferent": "Thử tìm kiếm với từ khóa khác.",
+    "resultsFor": "Tìm kiếm: \"{{query}}\""
+  },
+  "home": {
+    "recentlyAdded": "Mới thêm gần đây",
+    "booksByAuthor": "Sách của {{author}}",
+    "booksByAuthorDefault": "Sách của Tác giả",
+    "category": "Danh mục: {{name}}",
+    "categoryDefault": "Danh mục",
+    "categoryNone": "Danh mục: Không có",
+    "booksFromPublisher": "Sách từ {{publisher}}",
+    "booksFromPublisherDefault": "Sách từ Nhà xuất bản",
+    "series": "Bộ sách: {{name}}",
+    "seriesDefault": "Bộ sách",
+    "showing": "Hiển thị {{start}}-{{end}} trong tổng số {{total}} cuốn sách",
+    "loadingBooks": "Đang tải sách...",
+    "failedToLoad": "Không thể tải sách. Vui lòng kiểm tra đường dẫn thư viện Calibre của bạn.",
+    "noBooksFound": "Không tìm thấy sách",
+    "libraryEmpty": "Thư viện của bạn có vẻ trống."
+  },
+  "book": {
+    "detail": {
+      "loading": "Đang tải sách...",
+      "failedToLoad": "Không thể tải thông tin sách.",
+      "notFound": "Không tìm thấy sách",
+      "readBook": "Đọc sách",
+      "download": "Tải xuống {{format}}",
+      "authors": "Tác giả:",
+      "series": "Bộ sách:",
+      "publisher": "Nhà xuất bản:",
+      "published": "Xuất bản:",
+      "rating": "Đánh giá:",
+      "tags": "Thẻ:",
+      "description": "Mô tả",
+      "identifiers": "Định danh"
+    },
+    "card": {
+      "unknownAuthor": "Tác giả không xác định"
+    }
+  },
+  "discover": {
+    "title": "Khám phá (Sách ngẫu nhiên)",
+    "showing": "Hiển thị {{count}} cuốn sách ngẫu nhiên từ thư viện của bạn",
+    "loading": "Đang tải sách ngẫu nhiên...",
+    "failedToLoad": "Không thể tải sách ngẫu nhiên. Vui lòng kiểm tra đường dẫn thư viện Calibre của bạn.",
+    "noBooksFound": "Không tìm thấy sách",
+    "libraryEmpty": "Thư viện của bạn có vẻ trống.",
+    "refresh": "Làm mới"
+  },
+  "authors": {
+    "title": "Tác giả",
+    "placeholder": "Tìm kiếm tác giả...",
+    "loading": "Đang tải tác giả...",
+    "failedToLoad": "Không thể tải tác giả.",
+    "label": "tác giả",
+    "noResults": "Không tìm thấy tác giả",
+    "matching": "khớp với \"{{term}}\"",
+    "startingWith": "bắt đầu bằng \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}"
+  },
+  "publishers": {
+    "title": "Nhà xuất bản",
+    "placeholder": "Tìm kiếm nhà xuất bản...",
+    "loading": "Đang tải nhà xuất bản...",
+    "failedToLoad": "Không thể tải nhà xuất bản.",
+    "label": "nhà xuất bản",
+    "noResults": "Không tìm thấy nhà xuất bản",
+    "matching": "khớp với \"{{term}}\"",
+    "startingWith": "bắt đầu bằng \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}"
+  },
+  "categories": {
+    "title": "Danh mục",
+    "placeholder": "Tìm kiếm danh mục...",
+    "loading": "Đang tải danh mục...",
+    "failedToLoad": "Không thể tải danh mục.",
+    "label": "danh mục",
+    "noResults": "Không tìm thấy danh mục",
+    "matching": "khớp với \"{{term}}\"",
+    "startingWith": "bắt đầu bằng \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}"
+  },
+  "reader": {
+    "loading": "Đang tải sách...",
+    "failedToLoad": "Không thể tải sách.",
+    "notAvailable": "Cuốn sách này không có sẵn ở định dạng EPUB.",
+    "backToDetails": "Quay lại thông tin sách",
+    "previousPage": "Trang trước (←)",
+    "nextPage": "Trang sau (→)",
+    "navigateHint": "Sử dụng phím mũi tên (← →) hoặc nút để điều hướng"
+  },
+  "sort": {
+    "newest": "Sắp xếp theo ngày thêm sách, mới nhất trước",
+    "oldest": "Sắp xếp theo ngày thêm sách, cũ nhất trước",
+    "titleAsc": "Sắp xếp tiêu đề theo thứ tự bảng chữ cái",
+    "titleDesc": "Sắp xếp tiêu đề theo thứ tự bảng chữ cái ngược",
+    "authorAsc": "Sắp xếp tác giả theo thứ tự bảng chữ cái",
+    "authorDesc": "Sắp xếp tác giả theo thứ tự bảng chữ cái ngược",
+    "pubNew": "Sắp xếp theo ngày xuất bản, mới nhất trước",
+    "pubOld": "Sắp xếp theo ngày xuất bản, cũ nhất trước",
+    "seriesAsc": "Sắp xếp tăng dần theo chỉ số bộ sách",
+    "seriesDesc": "Sắp xếp giảm dần theo chỉ số bộ sách"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openssl rand:*)",
+      "Bash(find:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(npm install)",
+      "Bash(lsof:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker network:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

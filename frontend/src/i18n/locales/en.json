@@ -1,0 +1,134 @@
+{
+  "common": {
+    "calibre": "Calibre",
+    "loading": "Loading...",
+    "error": "Error",
+    "back": "Back",
+    "all": "All",
+    "browse": "Browse",
+    "refresh": "Refresh",
+    "search": "Search",
+    "unknownAuthor": "Unknown Author",
+    "noItemsFound": "No {{itemLabel}}s found",
+    "matching": "matching \"{{term}}\"",
+    "startingWith": "starting with \"{{char}}\""
+  },
+  "navigation": {
+    "books": "Books",
+    "discover": "Discover",
+    "authors": "Authors",
+    "publishers": "Publishers",
+    "categories": "Categories"
+  },
+  "search": {
+    "placeholder": "Search books, authors, tags...",
+    "searching": "Searching...",
+    "noQuery": "Enter a search term in the search bar above.",
+    "noResults": "No results found",
+    "tryDifferent": "Try searching with different keywords.",
+    "resultsFor": "Search: \"{{query}}\""
+  },
+  "home": {
+    "recentlyAdded": "Recently Added",
+    "booksByAuthor": "Books by {{author}}",
+    "booksByAuthorDefault": "Books by Author",
+    "category": "Category: {{name}}",
+    "categoryDefault": "Category",
+    "categoryNone": "Category: None",
+    "booksFromPublisher": "Books from {{publisher}}",
+    "booksFromPublisherDefault": "Books from Publisher",
+    "series": "Series: {{name}}",
+    "seriesDefault": "Series",
+    "showing": "Showing {{start}}-{{end}} of {{total}} books",
+    "loadingBooks": "Loading books...",
+    "failedToLoad": "Failed to load books. Please check your Calibre library path.",
+    "noBooksFound": "No books found",
+    "libraryEmpty": "Your library appears to be empty."
+  },
+  "book": {
+    "detail": {
+      "loading": "Loading book...",
+      "failedToLoad": "Failed to load book details.",
+      "notFound": "Book not found",
+      "readBook": "Read Book",
+      "download": "Download {{format}}",
+      "authors": "Authors:",
+      "series": "Series:",
+      "publisher": "Publisher:",
+      "published": "Published:",
+      "rating": "Rating:",
+      "tags": "Tags:",
+      "description": "Description",
+      "identifiers": "Identifiers"
+    },
+    "card": {
+      "unknownAuthor": "Unknown Author"
+    }
+  },
+  "discover": {
+    "title": "Discover (Random Books)",
+    "showing": "Showing {{count}} random books from your library",
+    "loading": "Loading random books...",
+    "failedToLoad": "Failed to load random books. Please check your Calibre library path.",
+    "noBooksFound": "No books found",
+    "libraryEmpty": "Your library appears to be empty.",
+    "refresh": "Refresh"
+  },
+  "authors": {
+    "title": "Authors",
+    "placeholder": "Search authors...",
+    "loading": "Loading authors...",
+    "failedToLoad": "Failed to load authors.",
+    "label": "author",
+    "noResults": "No authors found",
+    "matching": "matching \"{{term}}\"",
+    "startingWith": "starting with \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}s"
+  },
+  "publishers": {
+    "title": "Publishers",
+    "placeholder": "Search publishers...",
+    "loading": "Loading publishers...",
+    "failedToLoad": "Failed to load publishers.",
+    "label": "publisher",
+    "noResults": "No publishers found",
+    "matching": "matching \"{{term}}\"",
+    "startingWith": "starting with \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}s"
+  },
+  "categories": {
+    "title": "Categories",
+    "placeholder": "Search categories...",
+    "loading": "Loading categories...",
+    "failedToLoad": "Failed to load categories.",
+    "label": "category",
+    "noResults": "No categories found",
+    "matching": "matching \"{{term}}\"",
+    "startingWith": "starting with \"{{char}}\"",
+    "count": "{{count}} {{label}}",
+    "countPlural": "{{count}} {{label}}s"
+  },
+  "reader": {
+    "loading": "Loading book...",
+    "failedToLoad": "Failed to load book.",
+    "notAvailable": "This book is not available in EPUB format.",
+    "backToDetails": "Back to book details",
+    "previousPage": "Previous page (←)",
+    "nextPage": "Next page (→)",
+    "navigateHint": "Use arrow keys (← →) or buttons to navigate"
+  },
+  "sort": {
+    "newest": "Sort according to book date, newest first",
+    "oldest": "Sort according to book date, oldest first",
+    "titleAsc": "Sort title in alphabetical order",
+    "titleDesc": "Sort title in reverse alphabetical order",
+    "authorAsc": "Sort authors in alphabetical order",
+    "authorDesc": "Sort authors in reverse alphabetical order",
+    "pubNew": "Sort according to publishing date, newest first",
+    "pubOld": "Sort according to publishing date, oldest first",
+    "seriesAsc": "Sort ascending according to series index",
+    "seriesDesc": "Sort descending according to series index"
+  }
+}
