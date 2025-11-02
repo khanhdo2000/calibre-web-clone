@@ -46,3 +46,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Calibre Library (local development only)
+# Keep this commented if you want to track metadata.db structure
+# Uncomment to ignore local library folder
+# calibre-library/
+# But exclude scripts
+!scripts/

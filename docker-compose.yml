@@ -81,8 +81,10 @@ services:
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
 
     volumes:
-      # Mount your Calibre library here - CHANGE THIS PATH!
-      - ${CALIBRE_LIBRARY_PATH:-./calibre-library}:/calibre-library
+      # Mount your Calibre library here - For server deployment use absolute path
+      # Local dev: ./calibre-library:/calibre-library
+      # Server: /opt/calibre-library:/calibre-library
+      - ${CALIBRE_LIBRARY_PATH:-/opt/calibre-library}:/calibre-library:ro
       # Google Drive credentials (if using)
       - ${GOOGLE_DRIVE_CREDENTIALS_PATH:-./credentials.json}:/credentials.json:ro
     depends_on:
