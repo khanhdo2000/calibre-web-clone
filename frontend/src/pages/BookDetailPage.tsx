@@ -55,7 +55,8 @@ export function BookDetailPage() {
     );
   }
 
-  const coverUrl = book.has_cover ? booksApi.getCoverUrl(book.id) : null;
+  // Use S3 cover URL if available, otherwise fall back to API endpoint
+  const coverUrl = book.cover_url || (book.has_cover ? booksApi.getCoverUrl(book.id) : null);
 
   return (
     <div className="max-w-6xl mx-auto">

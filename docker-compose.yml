@@ -53,12 +53,13 @@ services:
       # Database - using existing PostgreSQL server
       # Format: postgresql+asyncpg://user:password@host:port/database
       # For server deployment: Use server's hostname/IP instead of 'postgres'
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://calibre:${POSTGRES_PASSWORD:-calibre_password_change_me}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-calibre_web}}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://calibre:ZBuJqsMtI2gKE0gosZuohPmLphaSawnJuX7QFMfEkFh1JH6GJoonre3AbLbwOrAu@31.97.70.110:5432/calibre_web}
 
       # Redis
       - REDIS_URL=redis://redis:6379
       - CACHE_TTL=3600
       - ENABLE_AUTH_CACHE=true
+      - ENABLE_CACHE=${ENABLE_CACHE:-true}
 
       # API
       - API_HOST=0.0.0.0
@@ -74,11 +75,11 @@ services:
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-}
 
       # S3 (optional)
-      - USE_S3_COVERS=${USE_S3_COVERS:-false}
+      - USE_S3_COVERS=${USE_S3_COVERS:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - AWS_REGION=${AWS_REGION:-ap-southeast-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-cdn.mnd.vn}
 
     volumes:
       # Mount your Calibre library here - For server deployment use absolute path

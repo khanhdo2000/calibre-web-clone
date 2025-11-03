@@ -31,6 +31,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import requests
+from PIL import Image
+import io
 
 # Setup logging
 logging.basicConfig(
@@ -105,6 +107,26 @@ class S3Uploader:
             logger.error(f"Failed to initialize S3: {e}")
             raise
 
+    def create_thumbnail(self, image_path: str, max_size: tuple = (300, 450), quality: int = 85) -> Optional[bytes]:
+        """Create a thumbnail version of the cover image"""
+        try:
+            with Image.open(image_path) as img:
+                # Convert to RGB if necessary (handles RGBA, etc.)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Calculate thumbnail size maintaining aspect ratio
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                
+                # Save to bytes
+                thumb_io = io.BytesIO()
+                img.save(thumb_io, format='JPEG', quality=quality, optimize=True)
+                thumb_io.seek(0)
+                return thumb_io.read()
+        except Exception as e:
+            logger.error(f"Failed to create thumbnail: {e}")
+            return None
+
     def upload_cover(self, book_id: int, cover_path: str) -> Optional[str]:
         """Upload cover to S3, returns S3 key if successful"""
         if not os.path.exists(cover_path):
@@ -125,6 +147,33 @@ class S3Uploader:
             return key
         except Exception as e:
             logger.error(f"Failed to upload cover {book_id}: {e}")
+            return None
+
+    def upload_cover_thumbnail(self, book_id: int, cover_path: str) -> Optional[str]:
+        """Upload cover thumbnail to S3, returns S3 key if successful"""
+        if not os.path.exists(cover_path):
+            logger.warning(f"Cover not found: {cover_path}")
+            return None
+
+        # Create thumbnail (300x450 max size, good for book cards)
+        thumbnail_data = self.create_thumbnail(cover_path, max_size=(300, 450), quality=85)
+        if not thumbnail_data:
+            logger.warning(f"Failed to create thumbnail for book {book_id}")
+            return None
+
+        thumb_key = f"{self.prefix}thumb/{book_id}.jpg"
+        try:
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=thumb_key,
+                Body=thumbnail_data,
+                ContentType='image/jpeg',
+                CacheControl='public, max-age=31536000'
+            )
+            logger.info(f"Uploaded cover thumbnail {book_id} to S3: {thumb_key}")
+            return thumb_key
+        except Exception as e:
+            logger.error(f"Failed to upload cover thumbnail {book_id}: {e}")
             return None
 
     def get_file_checksum(self, file_path: str) -> str:
@@ -539,6 +588,12 @@ def main():
                         "file_type": "cover",
                         "storage_type": "s3"
                     })
+                    # Also check for thumbnail
+                    items_to_check.append({
+                        "book_id": book["id"],
+                        "file_type": "cover_thumb",
+                        "storage_type": "s3"
+                    })
         
         if args.books_only or args.all:
             for book in books:
@@ -575,8 +630,10 @@ def main():
 
             book_id = book["id"]
             cover_key = f"s3:{book_id}:cover"
-            if cover_key in existing_uploads:
-                logger.debug(f"Skipping already uploaded cover: {book_id}")
+            thumb_key_check = f"s3:{book_id}:cover_thumb"
+            # Skip if both cover and thumbnail are already uploaded
+            if cover_key in existing_uploads and thumb_key_check in existing_uploads:
+                logger.debug(f"Skipping already uploaded cover and thumbnail: {book_id}")
                 continue
 
             cover_path = os.path.join(args.library_path, book["path"], "cover.jpg")
@@ -605,6 +662,22 @@ def main():
                         checksum=checksum,
                     )
                 covers_uploaded += 1
+                
+                # Also upload thumbnail if not already uploaded
+                if thumb_key_check not in existing_uploads:
+                    thumb_key = s3_uploader.upload_cover_thumbnail(book_id, cover_path)
+                    if thumb_key and upload_tracker:
+                        upload_tracker.add_record(
+                            book_id=book_id,
+                            book_path=book["path"],
+                            file_type="cover_thumb",
+                            storage_type="s3",
+                            storage_url=thumb_key,
+                            file_size=None,  # Thumbnail size is smaller, optional to track
+                            checksum=None,
+                        )
+                else:
+                    logger.debug(f"Thumbnail already uploaded for book {book_id}, skipping")
 
                 # Delete local file if requested and meets size requirement
                 if args.delete_local and file_size >= min_size_bytes:

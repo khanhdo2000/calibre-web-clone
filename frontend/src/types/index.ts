@@ -41,6 +41,8 @@ export interface Book {
   last_modified?: string;
   path: string;
   has_cover: boolean;
+  cover_url?: string | null; // S3 URL if cover is uploaded to S3 (full-size)
+  cover_thumb_url?: string | null; // S3 URL for thumbnail (optimized for list view)
   uuid?: string;
   isbn?: string;
   lccn?: string;

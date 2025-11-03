@@ -47,6 +47,8 @@ class Book(BaseModel):
     last_modified: Optional[datetime] = None
     path: str
     has_cover: bool = False
+    cover_url: Optional[str] = None  # S3 URL if cover is uploaded to S3 (full-size)
+    cover_thumb_url: Optional[str] = None  # S3 URL for thumbnail (optimized for list view)
     uuid: Optional[str] = None
     isbn: Optional[str] = None
     lccn: Optional[str] = None

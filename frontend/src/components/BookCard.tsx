@@ -10,7 +10,8 @@ interface BookCardProps {
 
 export function BookCard({ book }: BookCardProps) {
   const { t } = useTranslation();
-  const coverUrl = book.has_cover ? booksApi.getCoverUrl(book.id) : null;
+  // For list view, prefer thumbnail for better performance, fallback to full-size or API endpoint
+  const coverUrl = book.cover_thumb_url || book.cover_url || (book.has_cover ? booksApi.getCoverUrl(book.id) : null);
 
   return (
     <div className="flex flex-col">
