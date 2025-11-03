@@ -9,6 +9,7 @@ from app.services.calibre_db import calibre_db
 from app.services.storage import storage_service
 from app.database import get_db
 from app.models.upload_tracking import UploadTracking
+from app.routes.books import build_s3_cover_url
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -38,9 +39,13 @@ async def get_cover(book_id: int, db: AsyncSession = Depends(get_db)):
         upload_record = result.scalar_one_or_none()
 
         if upload_record and upload_record.storage_url:
-            # Serve from S3
-            s3_url = storage_service.get_cover_url(book_id, book.has_cover)
-            if s3_url:
+            # Serve from S3 using public URL (no credentials needed)
+            if settings.s3_bucket_name:
+                s3_url = build_s3_cover_url(
+                    upload_record.storage_url,
+                    settings.s3_bucket_name,
+                    settings.aws_region
+                )
                 return RedirectResponse(url=s3_url)
 
         # Fall back to local storage
