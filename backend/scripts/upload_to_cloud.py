@@ -14,6 +14,18 @@ Usage:
 
 import sys
 import os
+# Compat shim for Python < 3.10 where importlib.metadata.packages_distributions is missing
+try:
+    from importlib.metadata import packages_distributions as _pd  # noqa: F401
+except Exception:
+    try:
+        import importlib.metadata as _im  # type: ignore
+        import importlib_metadata as _im_backport  # type: ignore
+        if not hasattr(_im, "packages_distributions"):
+            # Inject backport function into stdlib module namespace
+            _im.packages_distributions = _im_backport.packages_distributions  # type: ignore[attr-defined]
+    except Exception:
+        pass
 import argparse
 import logging
 import hashlib
@@ -28,6 +40,9 @@ import sqlite3
 import boto3
 from botocore.exceptions import ClientError
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import requests
@@ -188,13 +203,57 @@ class S3Uploader:
 class GoogleDriveUploader:
     """Upload book files to Google Drive"""
 
-    def __init__(self, credentials_path: str, folder_id: str):
+    def __init__(
+        self,
+        folder_id: str,
+        service_account_path: Optional[str] = None,
+        oauth_client_secrets_path: Optional[str] = None,
+        oauth_token_path: Optional[str] = None,
+    ):
         self.folder_id = folder_id
+        self.make_links_public = False  # apply to newly uploaded files
+        self.make_existing_public = False  # apply to already-existing files
+        scopes = ['https://www.googleapis.com/auth/drive.file']
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=['https://www.googleapis.com/auth/drive.file']
-            )
+            credentials = None
+            if oauth_client_secrets_path:
+                # OAuth flow
+                token_path = oauth_token_path or os.path.join(os.path.dirname(oauth_client_secrets_path), 'token.json')
+                creds = None
+                if os.path.exists(token_path):
+                    try:
+                        creds = Credentials.from_authorized_user_file(token_path, scopes)
+                    except Exception:
+                        creds = None
+                if not creds or not creds.valid:
+                    if creds and creds.expired and creds.refresh_token:
+                        try:
+                            creds.refresh(Request())
+                        except Exception:
+                            creds = None
+                    if not creds or not creds.valid:
+                        flow = InstalledAppFlow.from_client_secrets_file(oauth_client_secrets_path, scopes)
+                        # Prefer local server; fallback to console if needed
+                        try:
+                            creds = flow.run_local_server(port=0)
+                        except Exception:
+                            creds = flow.run_console()
+                    # Save token
+                    try:
+                        with open(token_path, 'w') as token_file:
+                            token_file.write(creds.to_json())
+                    except Exception as e:
+                        logger.warning(f"Could not save OAuth token: {e}")
+                credentials = creds
+            elif service_account_path:
+                # Service account flow
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=scopes
+                )
+            else:
+                raise ValueError("Either oauth_client_secrets_path or service_account_path must be provided")
+
             self.service = build('drive', 'v3', credentials=credentials)
             logger.info("Google Drive client initialized")
         except Exception as e:
@@ -241,7 +300,6 @@ class GoogleDriveUploader:
             return None
 
         try:
-            import os
             # Parse Calibre path: "Author/Book Title (123)/book.epub"
             path_parts = book_path.split(os.sep)
             if len(path_parts) < 2:
@@ -283,8 +341,19 @@ class GoogleDriveUploader:
             files = results.get('files', [])
             if files:
                 # File exists, return existing ID
+                file_id = files[0]['id']
                 logger.info(f"File already exists in GDrive: {filename}")
-                return files[0]['id']
+                if self.make_existing_public and file_id:
+                    try:
+                        self.service.permissions().create(
+                            fileId=file_id,
+                            body={'type': 'anyone', 'role': 'reader'},
+                            fields='id'
+                        ).execute()
+                        logger.info(f"Ensured public link permission for existing file: {filename}")
+                    except Exception as e:
+                        logger.warning(f"Failed to set public permission for existing file {filename}: {e}")
+                return file_id
 
             # Upload file
             file_metadata = {
@@ -316,8 +385,21 @@ class GoogleDriveUploader:
                 fields='id'
             ).execute()
 
-            logger.info(f"Uploaded file to Google Drive: {filename} -> {file.get('id')}")
-            return file.get('id')
+            file_id = file.get('id')
+            # Optionally make link public (anyone with the link can view)
+            if self.make_links_public and file_id:
+                try:
+                    self.service.permissions().create(
+                        fileId=file_id,
+                        body={'type': 'anyone', 'role': 'reader'},
+                        fields='id'
+                    ).execute()
+                    logger.info(f"Set public link permission for: {filename}")
+                except Exception as e:
+                    logger.warning(f"Failed to set public permission for {filename}: {e}")
+
+            logger.info(f"Uploaded file to Google Drive: {filename} -> {file_id}")
+            return file_id
 
         except Exception as e:
             logger.error(f"Error uploading file to Google Drive: {e}")
@@ -441,7 +523,7 @@ def check_batch_uploads(
     server_api_url: str,
     items_to_check: List[Dict[str, int]],
     api_key: Optional[str] = None,
-    batch_size: int = 100
+    batch_size: int = 1000
 ) -> Dict[str, bool]:
     """
     Efficiently check if specific files are already uploaded using batch API.
@@ -503,7 +585,11 @@ def main():
     
     # Google Drive configuration
     parser.add_argument("--gdrive-credentials", help="Path to Google Drive service account credentials JSON")
+    parser.add_argument("--gdrive-oauth-client", help="Path to OAuth client_secrets.json for user-based auth")
+    parser.add_argument("--gdrive-oauth-token", help="Path to store/load OAuth token.json (optional)")
     parser.add_argument("--gdrive-folder-id", help="Google Drive folder ID")
+    parser.add_argument("--gdrive-public-links", action="store_true", help="Set newly uploaded files to 'anyone with the link' viewer")
+    parser.add_argument("--gdrive-update-existing-permissions", action="store_true", help="Also update permissions for already-existing files in Drive")
     
     # Server sync configuration
     parser.add_argument("--server-api-url", help="Server API URL for syncing upload tracking")
@@ -554,11 +640,24 @@ def main():
 
     gdrive_uploader = None
     if args.books_only or args.all:
-        if not all([args.gdrive_credentials, args.gdrive_folder_id]):
-            logger.error("Google Drive configuration required for book uploads")
+        if not args.gdrive_folder_id:
+            logger.error("Google Drive folder ID is required for book uploads")
+            return 1
+        # Support either service account or OAuth
+        if not args.gdrive_credentials and not args.gdrive_oauth_client:
+            logger.error("Provide either --gdrive-credentials (service account) or --gdrive-oauth-client (OAuth)")
             return 1
         try:
-            gdrive_uploader = GoogleDriveUploader(args.gdrive_credentials, args.gdrive_folder_id)
+            gdrive_uploader = GoogleDriveUploader(
+                folder_id=args.gdrive_folder_id,
+                service_account_path=args.gdrive_credentials,
+                oauth_client_secrets_path=args.gdrive_oauth_client,
+                oauth_token_path=args.gdrive_oauth_token,
+            )
+            if args.gdrive_public_links:
+                gdrive_uploader.make_links_public = True
+            if args.gdrive_update_existing_permissions:
+                gdrive_uploader.make_existing_public = True
         except Exception as e:
             logger.error(f"Failed to initialize Google Drive: {e}")
             return 1
@@ -597,7 +696,13 @@ def main():
         
         if args.books_only or args.all:
             for book in books:
-                for format_ext in book["file_formats"]:
+                # Deduplicate formats per book to avoid processing same type twice
+                unique_formats = []
+                for _fmt in book["file_formats"]:
+                    fmt_upper = _fmt.upper()
+                    if fmt_upper not in unique_formats:
+                        unique_formats.append(fmt_upper)
+                for format_ext in unique_formats:
                     items_to_check.append({
                         "book_id": book["id"],
                         "file_type": format_ext,
@@ -610,7 +715,7 @@ def main():
                 args.server_api_url,
                 items_to_check,
                 args.server_api_key,
-                batch_size=100
+                batch_size=1000
             )
             logger.info(f"Found {len(existing_uploads)} existing uploads to skip")
         elif args.incremental:
@@ -703,7 +808,13 @@ def main():
                 continue
 
             book_id = book["id"]
-            for format_ext in book["file_formats"]:
+            # Deduplicate formats per book in processing loop as well
+            unique_formats = []
+            for _fmt in book["file_formats"]:
+                fmt_upper = _fmt.upper()
+                if fmt_upper not in unique_formats:
+                    unique_formats.append(fmt_upper)
+            for format_ext in unique_formats:
                 file_key = f"gdrive:{book_id}:{format_ext}"
                 if file_key in existing_uploads:
                     logger.debug(f"Skipping already uploaded file: {book_id}.{format_ext}")
@@ -715,42 +826,105 @@ def main():
                     f"{os.path.basename(book['path'])}.{format_ext.lower()}"
                 )
 
-                if not os.path.exists(file_path):
-                    logger.warning(f"File not found: {file_path}")
-                    continue
+                if os.path.exists(file_path):
+                    # Canonical file exists – upload it
+                    if args.dry_run:
+                        logger.info(f"[DRY RUN] Would upload file: {book_id}.{format_ext}")
+                        files_uploaded += 1
+                        continue
 
-                if args.dry_run:
-                    logger.info(f"[DRY RUN] Would upload file: {book_id}.{format_ext}")
-                    files_uploaded += 1
-                    continue
+                    gdrive_file_id = gdrive_uploader.upload_file(file_path, book["path"])
+                    if gdrive_file_id:
+                        file_size = os.path.getsize(file_path)
 
-                gdrive_file_id = gdrive_uploader.upload_file(file_path, book["path"])
-                if gdrive_file_id:
-                    file_size = os.path.getsize(file_path)
-                    
-                    if upload_tracker:
-                        upload_tracker.add_record(
-                            book_id=book_id,
-                            book_path=book["path"],
-                            file_type=format_ext,
-                            storage_type="gdrive",
-                            storage_url=gdrive_file_id,
-                            file_size=file_size,
-                        )
-                    files_uploaded += 1
+                        if upload_tracker:
+                            upload_tracker.add_record(
+                                book_id=book_id,
+                                book_path=book["path"],
+                                file_type=format_ext,
+                                storage_type="gdrive",
+                                storage_url=gdrive_file_id,
+                                file_size=file_size,
+                            )
+                        files_uploaded += 1
 
-                    # Delete local file if requested and meets size requirement
-                    if args.delete_local and file_size >= min_size_bytes:
+                        # Delete local file if requested and meets size requirement
+                        if args.delete_local and file_size >= min_size_bytes:
+                            if args.dry_run:
+                                logger.info(f"[DRY RUN] Would delete local file: {file_path} ({file_size} bytes)")
+                            else:
+                                try:
+                                    os.remove(file_path)
+                                    logger.info(f"Deleted local file: {file_path} ({file_size} bytes)")
+                                except Exception as e:
+                                    logger.error(f"Failed to delete local file {file_path}: {e}")
+                        elif args.delete_local and file_size < min_size_bytes:
+                            logger.debug(f"Skipping deletion of file {file_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
+                else:
+                    # Fallback: scan the book folder for any supported formats and upload all
+                    book_dir = os.path.join(args.library_path, book["path"])
+                    if not os.path.isdir(book_dir):
+                        logger.warning(f"Book directory not found: {book_dir}")
+                        continue
+
+                    supported_exts = {".epub", ".pdf", ".mobi", ".azw3"}
+                    try:
+                        candidates = [
+                            os.path.join(book_dir, name)
+                            for name in os.listdir(book_dir)
+                            if os.path.splitext(name)[1].lower() in supported_exts
+                        ]
+                    except Exception as e:
+                        logger.error(f"Error listing directory {book_dir}: {e}")
+                        continue
+
+                    if not candidates:
+                        logger.warning(f"File not found: {file_path}")
+                        continue
+
+                    # Upload all found formats (skip those present in existing_uploads if server check exists)
+                    for found_path in candidates:
+                        found_ext = os.path.splitext(found_path)[1].lower()
+                        found_type = found_ext[1:].upper()  # e.g., '.epub' -> 'EPUB'
+                        existing_key = f"gdrive:{book_id}:{found_type}"
+                        if existing_key in existing_uploads:
+                            logger.debug(f"Skipping already uploaded file (existing on server): {book_id}.{found_type}")
+                            continue
+
                         if args.dry_run:
-                            logger.info(f"[DRY RUN] Would delete local file: {file_path} ({file_size} bytes)")
-                        else:
-                            try:
-                                os.remove(file_path)
-                                logger.info(f"Deleted local file: {file_path} ({file_size} bytes)")
-                            except Exception as e:
-                                logger.error(f"Failed to delete local file {file_path}: {e}")
-                    elif args.delete_local and file_size < min_size_bytes:
-                        logger.debug(f"Skipping deletion of file {file_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
+                            logger.info(f"[DRY RUN] Would upload found file: {found_path}")
+                            files_uploaded += 1
+                            continue
+
+                        gdrive_file_id = gdrive_uploader.upload_file(found_path, book["path"])
+                        if gdrive_file_id:
+                            file_size = os.path.getsize(found_path)
+                            if upload_tracker:
+                                upload_tracker.add_record(
+                                    book_id=book_id,
+                                    book_path=book["path"],
+                                    file_type=found_type,
+                                    storage_type="gdrive",
+                                    storage_url=gdrive_file_id,
+                                    file_size=file_size,
+                                )
+                            files_uploaded += 1
+
+                            # Delete local file if requested and meets size requirement
+                            if args.delete_local and file_size >= min_size_bytes:
+                                if args.dry_run:
+                                    logger.info(f"[DRY RUN] Would delete local file: {found_path} ({file_size} bytes)")
+                                else:
+                                    try:
+                                        os.remove(found_path)
+                                        logger.info(f"Deleted local file: {found_path} ({file_size} bytes)")
+                                    except Exception as e:
+                                        logger.error(f"Failed to delete local file {found_path}: {e}")
+                            elif args.delete_local and file_size < min_size_bytes:
+                                logger.debug(f"Skipping deletion of file {found_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
+
+                    # Fallback handled all found formats once for this book; move to next book
+                    break
 
         logger.info(f"Uploaded {files_uploaded} book files")
 
