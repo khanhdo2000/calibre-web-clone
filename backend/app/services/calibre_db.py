@@ -46,6 +46,7 @@ class CalibreDatabase:
             # Note: We use a regular sqlite:/// URL without mode=ro because
             # SQLAlchemy doesn't properly support URI parameters in the URL string
             db_url = f"sqlite:///{self.db_path}"
+
             self.engine = create_engine(
                 db_url,
                 poolclass=StaticPool,
@@ -53,14 +54,19 @@ class CalibreDatabase:
                     "check_same_thread": False,
                     "uri": False  # Don't treat the path as a URI
                 },
-                echo=False  # Disable SQL logging for production
+                echo=True  # Enable SQL logging for debugging
             )
 
             # Register custom SQLite function for text normalization
+            # This needs to be done AFTER creating the engine, and only for THIS engine
             from sqlalchemy import event
+
             @event.listens_for(self.engine, "connect")
             def register_custom_functions(dbapi_conn, connection_record):
-                dbapi_conn.create_function("normalize_text", 1, normalize_text)
+                # Only register for SQLite connections
+                if hasattr(dbapi_conn, 'create_function'):
+                    dbapi_conn.create_function("normalize_text", 1, normalize_text)
+                    logger.info("Registered normalize_text custom SQLite function")
 
             # Create session factory
             self.Session = scoped_session(sessionmaker(bind=self.engine))
@@ -519,6 +525,68 @@ class CalibreDatabase:
         finally:
             session.close()
 
+    def get_books_by_ids(self, book_ids: List[int]) -> List[Book]:
+        """Get multiple books by their IDs"""
+        if not self.Session:
+            raise FileNotFoundError(f"Calibre database not found at {self.db_path}")
+
+        session = self.Session()
+        try:
+            books = []
+            book_orms = session.query(Books).filter(Books.id.in_(book_ids)).all()
+
+            for book_orm in book_orms:
+                # Get authors
+                authors = [Author(id=a.id, name=a.name) for a in book_orm.authors]
+
+                # Get tags
+                tags = [Tag(id=t.id, name=t.name) for t in book_orm.tags]
+
+                # Get series
+                series = None
+                if book_orm.series_rel:
+                    series = Series(id=book_orm.series_rel.id, name=book_orm.series_rel.name)
+
+                # Get publisher
+                publisher = None
+                if book_orm.publishers_rel:
+                    publisher = Publisher(id=book_orm.publishers_rel.id, name=book_orm.publishers_rel.name)
+
+                # Get file formats
+                from app.services.calibre_db_models import Data
+                formats = session.query(Data.format, Data.name).filter(Data.book == book_orm.id).all()
+                file_formats = [f.format.upper() for f in formats]
+
+                # Create Book model
+                book = Book(
+                    id=book_orm.id,
+                    title=book_orm.title or "Unknown",
+                    path=book_orm.path or "",
+                    has_cover=bool(book_orm.has_cover),
+                    uuid=book_orm.uuid,
+                    isbn=book_orm.isbn or "",
+                    lccn=book_orm.lccn or "",
+                    pubdate=book_orm.pubdate,
+                    timestamp=book_orm.timestamp,
+                    last_modified=book_orm.last_modified,
+                    authors=authors,
+                    tags=tags,
+                    series=series,
+                    publisher=publisher,
+                    file_formats=file_formats,
+                )
+                books.append(book)
+
+            return books
+        finally:
+            session.close()
+
 
 # Singleton instance
 calibre_db = CalibreDatabase()
+
+
+# Helper function for API routes
+async def get_books_by_ids(book_ids: List[int]) -> List[Book]:
+    """Async wrapper for getting books by IDs"""
+    return calibre_db.get_books_by_ids(book_ids)

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.models.upload_tracking import UploadTracking
 from app.database import get_db, async_session_maker
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text, literal_column
 from datetime import datetime
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -49,9 +49,31 @@ async def bulk_upsert_upload_tracking(
         if not records:
             return {"message": "No records to sync", "count": 0}
 
-        # Prepare data for upsert
-        values = []
+        # Deduplicate records based on unique constraint (book_id, file_type, storage_type)
+        # PostgreSQL doesn't allow duplicate keys in a single INSERT ... ON CONFLICT statement
+        # Keep the most recent record when duplicates exist (based on upload_date)
+        seen = {}
+        duplicate_count = 0
         for record in records:
+            key = (record.book_id, record.file_type, record.storage_type)
+            if key not in seen:
+                seen[key] = record
+            else:
+                duplicate_count += 1
+                existing = seen[key]
+                # Keep the record with the most recent upload_date
+                if record.upload_date:
+                    if not existing.upload_date or record.upload_date > existing.upload_date:
+                        seen[key] = record
+                # If current record has no date but existing does, keep existing
+                # Otherwise keep the current one (both have no date)
+        
+        if duplicate_count > 0:
+            logger.warning(f"Found {duplicate_count} duplicate records in batch, deduplicated to {len(seen)} unique records")
+
+        # Prepare data for upsert from deduplicated records
+        values = []
+        for record in seen.values():
             values.append({
                 'book_id': record.book_id,
                 'book_path': record.book_path,
@@ -66,27 +88,37 @@ async def bulk_upsert_upload_tracking(
         # Use PostgreSQL ON CONFLICT for upsert
         from sqlalchemy.dialects.postgresql import insert
         
-        stmt = insert(UploadTracking).values(values)
-        stmt = stmt.on_conflict_do_update(
+        insert_stmt = insert(UploadTracking).values(values)
+        
+        # Use on_conflict_do_update with excluded values
+        # Reference excluded columns using literal_column for proper SQL generation
+        stmt = insert_stmt.on_conflict_do_update(
             index_elements=['book_id', 'file_type', 'storage_type'],
             set_={
-                'storage_url': stmt.excluded.storage_url,
-                'upload_date': stmt.excluded.upload_date,
-                'file_size': stmt.excluded.file_size,
-                'checksum': stmt.excluded.checksum,
-                'book_path': stmt.excluded.book_path,
+                UploadTracking.storage_url: literal_column('excluded.storage_url'),
+                UploadTracking.upload_date: literal_column('excluded.upload_date'),
+                UploadTracking.file_size: literal_column('excluded.file_size'),
+                UploadTracking.checksum: literal_column('excluded.checksum'),
+                UploadTracking.book_path: literal_column('excluded.book_path'),
             }
         )
 
         await db.execute(stmt)
         await db.commit()
 
-        logger.info(f"Synced {len(records)} upload tracking records")
-        return {"message": "Upload tracking synced successfully", "count": len(records)}
+        deduplicated_count = len(seen)
+        if deduplicated_count < len(records):
+            logger.info(f"Synced {deduplicated_count} upload tracking records (deduplicated from {len(records)} input records)")
+        else:
+            logger.info(f"Synced {deduplicated_count} upload tracking records")
+        return {"message": "Upload tracking synced successfully", "count": deduplicated_count}
 
     except Exception as e:
         await db.rollback()
+        import traceback
+        error_traceback = traceback.format_exc()
         logger.error(f"Error syncing upload tracking: {e}")
+        logger.error(f"Traceback: {error_traceback}")
         raise HTTPException(status_code=500, detail=f"Failed to sync upload tracking: {str(e)}")
 
 

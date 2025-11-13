@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+from urllib.parse import quote
+from unidecode import unidecode
+import re
 import os
 import logging
 from pathlib import Path
@@ -90,7 +93,18 @@ async def download_book(book_id: int, format: str, db: AsyncSession = Depends(ge
             "TXT": "text/plain",
         }
         media_type = media_types.get(format_upper, "application/octet-stream")
-        filename = f"{book.title}.{format.lower()}"
+        # Build a safe Content-Disposition
+        if format_upper == "MOBI":
+            # For MOBI, produce a strict ASCII filename: letters, numbers, dashes and underscores only
+            base_name = unidecode(book.title)
+            base_name = re.sub(r"[^A-Za-z0-9\-_.]+", "_", base_name)  # replace non-allowed with underscores
+            base_name = re.sub(r"_+", "_", base_name).strip("._-") or "book"
+            filename = f"{base_name}.{format.lower()}"
+            cd_header = f"attachment; filename=\"{filename}\""
+        else:
+            filename = f"{book.title}.{format.lower()}"
+            ascii_fallback = filename.encode('ascii', 'ignore').decode('ascii') or f"book.{format.lower()}"
+            cd_header = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
         # Check upload tracking for Google Drive file
         result = await db.execute(
@@ -109,7 +123,7 @@ async def download_book(book_id: int, format: str, db: AsyncSession = Depends(ge
                 return StreamingResponse(
                     book_stream,
                     media_type=media_type,
-                    headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+                    headers={"Content-Disposition": cd_header}
                 )
 
         # Fall back to checking Google Drive by path (legacy)
@@ -121,17 +135,28 @@ async def download_book(book_id: int, format: str, db: AsyncSession = Depends(ge
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'}
             )
 
-        # Use local file
+        # Use local file (with fallback scan if canonical name is missing)
         book_path = storage_service.get_book_file_path(book.path, format)
-
         if not os.path.exists(book_path):
-            raise HTTPException(status_code=404, detail="Book file not found")
+            # Fallback: scan the book directory for any matching extension
+            book_dir = os.path.join(settings.calibre_library_path, book.path)
+            if not os.path.isdir(book_dir):
+                raise HTTPException(status_code=404, detail="Book file not found")
+            target_ext = f".{format.lower()}"
+            candidates = [
+                os.path.join(book_dir, name)
+                for name in os.listdir(book_dir)
+                if os.path.splitext(name)[1].lower() == target_ext
+            ]
+            if not candidates:
+                raise HTTPException(status_code=404, detail="Book file not found")
+            # pick first candidate
+            book_path = candidates[0]
 
         return FileResponse(
             book_path,
             media_type=media_type,
-            filename=filename,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": cd_header}
         )
     except HTTPException:
         raise
@@ -161,6 +186,17 @@ async def read_book(book_id: int, format: str, db: AsyncSession = Depends(get_db
             "TXT": "text/plain",
         }
         media_type = media_types.get(format_upper, "application/octet-stream")
+        # RFC 5987/ASCII header for inline
+        if format_upper == "MOBI":
+            base_name = unidecode(book.title)
+            base_name = re.sub(r"[^A-Za-z0-9\-_.]+", "_", base_name)
+            base_name = re.sub(r"_+", "_", base_name).strip("._-") or "book"
+            filename = f"{base_name}.{format.lower()}"
+            cd_inline = f"inline; filename=\"{filename}\""
+        else:
+            filename = f"{book.title}.{format.lower()}"
+            ascii_fallback = filename.encode('ascii', 'ignore').decode('ascii') or f"book.{format.lower()}"
+            cd_inline = f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
         # Check upload tracking for Google Drive file
         result = await db.execute(
@@ -179,7 +215,7 @@ async def read_book(book_id: int, format: str, db: AsyncSession = Depends(get_db
                 return StreamingResponse(
                     book_stream,
                     media_type=media_type,
-                    headers={"Content-Disposition": "inline"}
+                    headers={"Content-Disposition": cd_inline}
                 )
 
         # Fall back to checking Google Drive by path (legacy)
@@ -188,22 +224,111 @@ async def read_book(book_id: int, format: str, db: AsyncSession = Depends(get_db
             return StreamingResponse(
                 book_stream,
                 media_type=media_type,
-                headers={"Content-Disposition": "inline"}
+                headers={"Content-Disposition": cd_inline}
             )
 
-        # Use local file
+        # Use local file (with fallback scan if canonical name is missing)
         book_path = storage_service.get_book_file_path(book.path, format)
-
         if not os.path.exists(book_path):
-            raise HTTPException(status_code=404, detail="Book file not found")
+            book_dir = os.path.join(settings.calibre_library_path, book.path)
+            if not os.path.isdir(book_dir):
+                raise HTTPException(status_code=404, detail="Book file not found")
+            target_ext = f".{format.lower()}"
+            candidates = [
+                os.path.join(book_dir, name)
+                for name in os.listdir(book_dir)
+                if os.path.splitext(name)[1].lower() == target_ext
+            ]
+            if not candidates:
+                raise HTTPException(status_code=404, detail="Book file not found")
+            book_path = candidates[0]
 
         return FileResponse(
             book_path,
             media_type=media_type,
-            headers={"Content-Disposition": "inline"}
+            headers={"Content-Disposition": cd_inline}
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error reading book {book_id} in format {format}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/book/{book_id}/{format}")
+async def get_book_redirect(book_id: int, format: str, db: AsyncSession = Depends(get_db)):
+    """Redirect to Google Drive download link if available, otherwise serve from local storage.
+
+    This endpoint checks if the book is stored in Google Drive and redirects to the public download URL.
+    If not found in Google Drive, it falls back to downloading from local storage.
+    """
+    try:
+        book = calibre_db.get_book(book_id)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+
+        format_upper = format.upper()
+        if format_upper not in book.file_formats:
+            raise HTTPException(status_code=404, detail=f"Format {format_upper} not available for this book")
+
+        # Check if file is in Google Drive
+        result = await db.execute(
+            select(UploadTracking).where(
+                UploadTracking.book_id == book_id,
+                UploadTracking.file_type == format_upper,
+                UploadTracking.storage_type == "gdrive"
+            )
+        )
+        upload_record = result.scalar_one_or_none()
+
+        if upload_record and upload_record.storage_url:
+            # Redirect to Google Drive download link
+            file_id = upload_record.storage_url
+            public_url = f"https://drive.google.com/uc?id={file_id}&export=download"
+            return RedirectResponse(url=public_url)
+
+        # Fall back to local download endpoint
+        from fastapi import Request
+        return RedirectResponse(url=f"/api/files/download/{book_id}/{format}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting book redirect for book {book_id} format {format}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/gdrive-link/{book_id}/{format}")
+async def gdrive_direct_link(book_id: int, format: str, db: AsyncSession = Depends(get_db)):
+    """Redirect to the public Google Drive download URL if tracked.
+
+    This provides a right-clickable direct link: https://drive.google.com/uc?id=<FILE_ID>&export=download
+    """
+    try:
+        book = calibre_db.get_book(book_id)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+
+        format_upper = format.upper()
+        if format_upper not in book.file_formats:
+            raise HTTPException(status_code=404, detail=f"Format {format_upper} not available for this book")
+
+        result = await db.execute(
+            select(UploadTracking).where(
+                UploadTracking.book_id == book_id,
+                UploadTracking.file_type == format_upper,
+                UploadTracking.storage_type == "gdrive"
+            )
+        )
+        upload_record = result.scalar_one_or_none()
+
+        if not upload_record or not upload_record.storage_url:
+            raise HTTPException(status_code=404, detail="Google Drive link not found")
+
+        file_id = upload_record.storage_url
+        public_url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        return RedirectResponse(url=public_url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting Google Drive link for book {book_id} format {format}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
