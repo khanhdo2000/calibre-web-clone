@@ -90,15 +90,25 @@ export function BookDetailPage() {
               )}
 
               {book.file_formats.map((format) => (
+                <div key={format} className="flex gap-2">
                 <a
-                  key={format}
                   href={booksApi.getDownloadUrl(book.id, format.toLowerCase())}
                   download
-                  className="block w-full bg-gray-600 text-white px-4 py-3 rounded-lg text-center font-medium hover:bg-gray-700 transition-colors"
+                    className="flex-1 bg-gray-600 text-white px-4 py-3 rounded-lg text-center font-medium hover:bg-gray-700 transition-colors"
                 >
                   <Download className="w-5 h-5 inline mr-2" />
                   {t('book.detail.download', { format })}
                 </a>
+                  <a
+                    href={booksApi.getGDriveDirectUrl(book.id, format.toLowerCase())}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-3 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    title="Download via Google Drive"
+                  >
+                    GDrive
+                  </a>
+                </div>
               ))}
             </div>
           </div>

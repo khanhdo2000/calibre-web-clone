@@ -41,6 +41,10 @@ export const booksApi = {
     return `${API_BASE_URL}/files/download/${bookId}/${format}`;
   },
 
+  getGDriveDirectUrl: (bookId: number, format: string): string => {
+    return `${API_BASE_URL}/files/gdrive-link/${bookId}/${format}`;
+  },
+
   getReadUrl: (bookId: number, format: string): string => {
     return `${API_BASE_URL}/files/read/${bookId}/${format}`;
   },

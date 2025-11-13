@@ -9,12 +9,16 @@ import { AuthorsPage } from './pages/AuthorsPage';
 import { PublishersPage } from './pages/PublishersPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { DiscoverPage } from './pages/DiscoverPage';
+import { PairPage } from './pages/PairPage';
+import { SelectBooksPage } from './pages/SelectBooksPage';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/read/:id" element={<ReaderPage />} />
+        <Route path="/pair" element={<PairPage />} />
+        <Route path="/select-books" element={<SelectBooksPage />} />
         <Route
           path="/*"
           element={
