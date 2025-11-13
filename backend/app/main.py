@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -80,8 +80,15 @@ app.include_router(kindle_simple.router)
 
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
+async def root(request: Request):
+    """Root endpoint - redirects Kindle/Kobo devices to pairing page"""
+    from fastapi.responses import RedirectResponse
+
+    # Check User-Agent for Kindle or Kobo devices
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "kindle" in user_agent or "kobo" in user_agent:
+        return RedirectResponse(url="/kindle", status_code=302)
+
     return {
         "name": "Kho sach MND",
         "version": "1.0.0",
