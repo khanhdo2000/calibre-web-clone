@@ -211,6 +211,24 @@ async def kindle_page(request: Request, key: str = None):
             font-size: 12px;
             margin-top: 20px;
         }}
+        .refresh-btn {{
+            display: inline-block;
+            background: #059669;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 13px;
+            margin: 10px 5px;
+            border: none;
+            cursor: pointer;
+        }}
+        .refresh-btn:hover {{
+            background: #047857;
+        }}
+        .refresh-btn:active {{
+            background: #065f46;
+        }}
     </style>
 </head>
 <body>
@@ -245,38 +263,35 @@ async def kindle_page(request: Request, key: str = None):
     </div>
 
     <div class="refresh-note">
-        Trang tự động làm mới sau 10 giây • Phiên hết hạn sau 30 phút
+        <button onclick="manualRefresh(); return false;" class="refresh-btn">🔄 Làm mới ngay</button><br>
+        Trang tự động làm mới sau 5 giây • Phiên hết hạn sau 30 phút
     </div>
 
     <script>
         // Use current page's protocol to ensure HTTPS when accessed via HTTPS
-        const PROTOCOL = window.location.protocol;
-        const HOST = window.location.host;
-        const DEVICE_KEY = '{device_key}';
-        const CHECK_URL = PROTOCOL + '//' + HOST + '/api/kindle-pair/check-books/' + DEVICE_KEY;
-        const API_BASE = PROTOCOL + '//' + HOST + '/api';
+        var PROTOCOL = window.location.protocol;
+        var HOST = window.location.host;
+        var DEVICE_KEY = '{device_key}';
+        var CHECK_URL = PROTOCOL + '//' + HOST + '/api/kindle-pair/check-books/' + DEVICE_KEY;
+        var API_BASE = PROTOCOL + '//' + HOST + '/api';
+        var pollInterval = null;
+        var lastCheckTime = Date.now();
 
-        console.log('Protocol:', PROTOCOL);
-        console.log('Host:', HOST);
-        console.log('API_BASE:', API_BASE);
-        console.log('CHECK_URL:', CHECK_URL);
-
-        // Persist device key in localStorage
+        // Persist device key in localStorage (with try-catch for older browsers)
         try {{
-            const STORAGE_KEY = 'kindle_device_key';
-            const storedKey = localStorage.getItem(STORAGE_KEY);
-            const urlParams = new URLSearchParams(window.location.search);
-            const keyParam = urlParams.get('key');
+            var STORAGE_KEY = 'kindle_device_key';
+            var storedKey = localStorage.getItem(STORAGE_KEY);
+            var urlParams = new URLSearchParams(window.location.search);
+            var keyParam = urlParams.get('key');
 
             // If we have a new key and it's different from stored, save it
             if (DEVICE_KEY && DEVICE_KEY !== storedKey) {{
                 localStorage.setItem(STORAGE_KEY, DEVICE_KEY);
-                console.log('Saved device key to localStorage:', DEVICE_KEY);
             }}
 
             // Show status if using stored key
             if (keyParam && keyParam === storedKey) {{
-                const statusEl = document.getElementById('keyStatus');
+                var statusEl = document.getElementById('keyStatus');
                 if (statusEl) {{
                     statusEl.style.display = 'block';
                 }}
@@ -284,89 +299,188 @@ async def kindle_page(request: Request, key: str = None):
 
             // If no key in URL but we have a stored key, redirect to use it
             if (!keyParam && storedKey && storedKey !== DEVICE_KEY) {{
-                console.log('Redirecting to use stored key:', storedKey);
                 window.location.href = window.location.pathname + '?key=' + storedKey;
             }}
         }} catch (e) {{
-            console.error('localStorage not available:', e);
+            // localStorage not available, continue without it
         }}
 
         function resetDevice() {{
             try {{
                 localStorage.removeItem('kindle_device_key');
-                console.log('Cleared stored device key');
             }} catch (e) {{
-                console.error('Error clearing localStorage:', e);
+                // Ignore errors
             }}
             // Redirect to get a new key
             window.location.href = window.location.pathname;
         }}
 
         function formatAuthors(authors) {{
-            return authors.map(a => a.name).join(', ');
+            if (!authors || !authors.length) return 'Unknown';
+            var names = [];
+            for (var i = 0; i < authors.length; i++) {{
+                names.push(authors[i].name || 'Unknown');
+            }}
+            return names.join(', ');
         }}
 
         function getDownloadUrl(bookId, formats) {{
-            const preferred = ['MOBI', 'AZW3', 'AZW', 'EPUB', 'PDF'];
-            const format = preferred.find(f => formats.includes(f)) || formats[0];
+            var preferred = ['MOBI', 'AZW3', 'AZW', 'EPUB', 'PDF'];
+            var format = null;
+            for (var i = 0; i < preferred.length; i++) {{
+                if (formats.indexOf(preferred[i]) !== -1) {{
+                    format = preferred[i];
+                    break;
+                }}
+            }}
+            if (!format && formats.length > 0) {{
+                format = formats[0];
+            }}
             if (!format) return null;
             return API_BASE + '/files/book/' + bookId + '/' + format.toLowerCase();
         }}
 
-        async function checkBooks() {{
-            try {{
-                const response = await fetch(CHECK_URL);
-                if (!response.ok) {{
-                    if (response.status === 404) {{
-                        document.getElementById('booksList').innerHTML =
+        // Compatible HTTP request function (works with older browsers)
+        function makeRequest(url, callback) {{
+            // Try fetch first (modern browsers)
+            if (window.fetch) {{
+                fetch(url)
+                    .then(function(response) {{
+                        if (!response.ok) {{
+                            callback(null, response.status);
+                            return;
+                        }}
+                        return response.json();
+                    }})
+                    .then(function(data) {{
+                        callback(data, null);
+                    }})
+                    .catch(function(err) {{
+                        callback(null, err);
+                    }});
+                return;
+            }}
+
+            // Fallback to XMLHttpRequest (older browsers)
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {{
+                if (xhr.readyState === 4) {{
+                    if (xhr.status === 200) {{
+                        try {{
+                            var data = JSON.parse(xhr.responseText);
+                            callback(data, null);
+                        }} catch (e) {{
+                            callback(null, 'Parse error');
+                        }}
+                    }} else if (xhr.status === 404) {{
+                        callback(null, 404);
+                    }} else {{
+                        callback(null, xhr.status);
+                    }}
+                }}
+            }};
+            xhr.onerror = function() {{
+                callback(null, 'Network error');
+            }};
+            xhr.open('GET', url, true);
+            xhr.timeout = 10000; // 10 second timeout
+            xhr.ontimeout = function() {{
+                callback(null, 'Timeout');
+            }};
+            xhr.send();
+        }}
+
+        function checkBooks() {{
+            lastCheckTime = Date.now();
+            makeRequest(CHECK_URL, function(data, error) {{
+                var countEl = document.getElementById('bookCount');
+                var listEl = document.getElementById('booksList');
+
+                if (error) {{
+                    if (error === 404) {{
+                        listEl.innerHTML =
                             '<div style="color: red;">' +
                             'Phiên đã hết hạn. ' +
                             '<a href="#" onclick="resetDevice(); return false;" style="color: blue; text-decoration: underline;">Tạo mã mới</a>' +
                             '</div>';
-                        return;
+                        // Stop polling if session expired
+                        if (pollInterval) {{
+                            clearInterval(pollInterval);
+                            pollInterval = null;
+                        }}
+                    }} else {{
+                        // Show error but keep polling
+                        listEl.innerHTML = '<div style="color: #999; font-size: 12px;">Đang kết nối... (Lỗi: ' + error + ')</div>';
                     }}
-                    throw new Error('Failed to check books');
+                    return;
                 }}
 
-                const data = await response.json();
-                const books = data.books || [];
+                if (!data || !data.books) {{
+                    return;
+                }}
 
-                const countEl = document.getElementById('bookCount');
-                const listEl = document.getElementById('booksList');
+                var books = data.books || [];
 
                 if (books.length === 0) {{
-                    countEl.textContent = '';
+                    if (countEl) countEl.textContent = '';
                     listEl.className = 'loading';
                     listEl.innerHTML = 'Chưa chọn sách nào.<br>Chọn sách từ thiết bị đã ghép nối để tải về đây.';
                 }} else {{
-                    countEl.textContent = '(' + books.length + ')';
+                    if (countEl) countEl.textContent = '(' + books.length + ')';
                     listEl.className = 'books-list';
 
-                    listEl.innerHTML = books.map(book => {{
-                        const downloadUrl = getDownloadUrl(book.id, book.file_formats);
-                        const downloadBtn = downloadUrl ?
+                    var html = '';
+                    for (var i = 0; i < books.length; i++) {{
+                        var book = books[i];
+                        var downloadUrl = getDownloadUrl(book.id, book.file_formats);
+                        var downloadBtn = downloadUrl ?
                             '<a href="' + downloadUrl + '" class="download-btn" download>Tải về</a>' : '';
 
-                        return '<div class="book-item">' +
+                        html += '<div class="book-item">' +
                             '<div class="book-info">' +
-                            '<div class="book-title">' + book.title + '</div>' +
+                            '<div class="book-title">' + (book.title || 'Untitled') + '</div>' +
                             '<div class="book-author">' + formatAuthors(book.authors) + '</div>' +
-                            '<div class="book-formats">Định dạng: ' + book.file_formats.join(', ') + '</div>' +
+                            '<div class="book-formats">Định dạng: ' + (book.file_formats ? book.file_formats.join(', ') : 'N/A') + '</div>' +
                             '</div>' +
                             downloadBtn +
                             '</div>';
-                    }}).join('');
+                    }}
+                    listEl.innerHTML = html;
                 }}
-            }} catch (err) {{
-                console.error('Error checking books:', err);
-            }}
+            }});
         }}
 
         // Check immediately
         checkBooks();
 
-        // Then check every 10 seconds
-        setInterval(checkBooks, 10000);
+        // Then check every 5 seconds (with fallback mechanism)
+        pollInterval = setInterval(function() {{
+            // Check if page is still active (prevent issues with background tabs)
+            var timeSinceLastCheck = Date.now() - lastCheckTime;
+            if (timeSinceLastCheck > 30000) {{
+                // If more than 30 seconds since last check, something might be wrong
+                // Try to restart polling
+                if (pollInterval) {{
+                    clearInterval(pollInterval);
+                }}
+                pollInterval = setInterval(checkBooks, 5000);
+            }}
+            checkBooks();
+        }}, 5000);
+
+        // Add manual refresh button handler
+        function manualRefresh() {{
+            checkBooks();
+        }}
+
+        // Add meta refresh as ultimate fallback (refreshes page every 60 seconds)
+        // This ensures the page updates even if JavaScript fails
+        setTimeout(function() {{
+            var metaRefresh = document.createElement('meta');
+            metaRefresh.httpEquiv = 'refresh';
+            metaRefresh.content = '60';
+            document.getElementsByTagName('head')[0].appendChild(metaRefresh);
+        }}, 5000); // Add after 5 seconds to let JS polling work first
     </script>
 </body>
 </html>
