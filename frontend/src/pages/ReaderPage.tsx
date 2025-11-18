@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, List, X } from 'lucide-react';
 import { booksApi } from '@/services/api';
-import api from '@/services/api';
 import type { BookDetail } from '@/types';
 // @ts-ignore - epubjs types may not be available
 import ePub from 'epubjs';
@@ -33,6 +32,19 @@ export function ReaderPage() {
     }
   }, [id]);
 
+  // Separate effect to load EPUB after viewer ref is available
+  useEffect(() => {
+    if (book && book.file_formats.includes('EPUB') && !epubBookRef.current) {
+      // Wait for next tick to ensure DOM is ready
+      const timer = setTimeout(() => {
+        if (viewerRef.current) {
+          loadEpub(book.id);
+        }
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [book]);
+
   const loadBook = async (bookId: number) => {
     setLoading(true);
     setError(null);
@@ -47,62 +59,72 @@ export function ReaderPage() {
         return;
       }
 
-      // Initialize epub reader
-      if (viewerRef.current) {
-        // Use axios to fetch EPUB as arraybuffer (for proper credentials/CORS handling)
-        // This prevents EPUB.js from making additional HTTP requests for internal files
-        const response = await api.get(`/files/read/${bookId}/epub`, {
-          responseType: 'arraybuffer',
-        });
-        
-        // Pass arraybuffer to EPUB.js instead of URL
-        const epubBook = ePub(response.data);
-        epubBookRef.current = epubBook;
-        
-        // Load table of contents
-        epubBook.ready.then(() => {
-          return epubBook.loaded.navigation;
-        }).then((nav: any) => {
-          if (nav && nav.toc && nav.toc.length > 0) {
-            const tocItems = nav.toc.map((item: any) => ({
-              id: item.id || '',
-              href: item.href || '',
-              label: item.label || '',
-              subitems: item.subitems?.map((subitem: any) => ({
-                id: subitem.id || '',
-                href: subitem.href || '',
-                label: subitem.label || '',
-              })),
-            }));
-            setToc(tocItems);
-          }
-        }).catch((err: any) => {
-          console.warn('Failed to load table of contents:', err);
-        });
-        
-        const rendition = epubBook.renderTo(viewerRef.current, {
-          width: '100%',
-          height: '100%',
-          spread: 'none',
-        });
-
-        rendition.display();
-        renditionRef.current = rendition;
-
-        // Navigation with arrow keys
-        document.addEventListener('keydown', handleKeyPress);
-      }
-
       setLoading(false);
     } catch (err) {
       setError(t('reader.failedToLoad'));
-      console.error(err);
+      console.error('Error loading book:', err);
       setLoading(false);
     }
+  };
 
-    return () => {
-      document.removeEventListener('keydown', handleKeyPress);
-    };
+  const loadEpub = async (bookId: number) => {
+    if (!viewerRef.current) {
+      console.error('Viewer ref not available');
+      return;
+    }
+
+    try {
+      console.log('Loading EPUB for book:', bookId);
+      // Fetch EPUB as arraybuffer so EPUB.js can unpack it client-side
+      // This prevents EPUB.js from making additional HTTP requests for internal files
+      const bookUrl = booksApi.getReadUrl(bookId, 'epub');
+      const response = await fetch(bookUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to load EPUB: ${response.statusText}`);
+      }
+      const epubArrayBuffer = await response.arrayBuffer();
+      
+      console.log('EPUB loaded, initializing reader');
+      // Pass arraybuffer to EPUB.js instead of URL
+      const epubBook = ePub(epubArrayBuffer);
+      epubBookRef.current = epubBook;
+      
+      // Load table of contents
+      epubBook.ready.then(() => {
+        return epubBook.loaded.navigation;
+      }).then((nav: any) => {
+        if (nav && nav.toc && nav.toc.length > 0) {
+          const tocItems = nav.toc.map((item: any) => ({
+            id: item.id || '',
+            href: item.href || '',
+            label: item.label || '',
+            subitems: item.subitems?.map((subitem: any) => ({
+              id: subitem.id || '',
+              href: subitem.href || '',
+              label: subitem.label || '',
+            })),
+          }));
+          setToc(tocItems);
+        }
+      }).catch((err: any) => {
+        console.warn('Failed to load table of contents:', err);
+      });
+      
+      const rendition = epubBook.renderTo(viewerRef.current, {
+        width: '100%',
+        height: '100%',
+        spread: 'none',
+      });
+
+      rendition.display();
+      renditionRef.current = rendition;
+
+      // Navigation with arrow keys
+      document.addEventListener('keydown', handleKeyPress);
+    } catch (err) {
+      console.error('Error loading EPUB:', err);
+      setError(t('reader.failedToLoad'));
+    }
   };
 
   const handleKeyPress = (e: KeyboardEvent) => {
