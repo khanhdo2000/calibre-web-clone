@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, List, X } from 'lucide-react';
 import { booksApi } from '@/services/api';
+import api from '@/services/api';
 import type { BookDetail } from '@/types';
 // @ts-ignore - epubjs types may not be available
 import ePub from 'epubjs';
@@ -48,18 +49,14 @@ export function ReaderPage() {
 
       // Initialize epub reader
       if (viewerRef.current) {
-        const bookUrl = booksApi.getReadUrl(bookId, 'epub');
-        
-        // Fetch EPUB as arraybuffer so EPUB.js can unpack it client-side
+        // Use axios to fetch EPUB as arraybuffer (for proper credentials/CORS handling)
         // This prevents EPUB.js from making additional HTTP requests for internal files
-        const response = await fetch(bookUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to load EPUB: ${response.statusText}`);
-        }
-        const epubArrayBuffer = await response.arrayBuffer();
+        const response = await api.get(`/files/read/${bookId}/epub`, {
+          responseType: 'arraybuffer',
+        });
         
         // Pass arraybuffer to EPUB.js instead of URL
-        const epubBook = ePub(epubArrayBuffer);
+        const epubBook = ePub(response.data);
         epubBookRef.current = epubBook;
         
         // Load table of contents
