@@ -6,6 +6,7 @@ import re
 import os
 import logging
 from pathlib import Path
+import httpx
 
 from app.config import settings
 from app.services.calibre_db import calibre_db
@@ -210,10 +211,58 @@ async def read_book(book_id: int, format: str, db: AsyncSession = Depends(get_db
 
         if upload_record and upload_record.storage_url:
             # Stream from Google Drive using file ID
-            book_stream = storage_service.get_book_stream_from_gdrive_id(upload_record.storage_url)
+            file_id = upload_record.storage_url
+            book_stream = storage_service.get_book_stream_from_gdrive_id(file_id)
             if book_stream:
                 return StreamingResponse(
                     book_stream,
+                    media_type=media_type,
+                    headers={"Content-Disposition": cd_inline}
+                )
+            else:
+                # If streaming via API fails, fetch from Google Drive public URL and proxy it
+                # This avoids CORS issues that would occur with a redirect
+                logger.warning(
+                    f"Failed to stream Google Drive file {file_id} for book {book_id}, "
+                    f"format {format_upper}. Proxying from public URL."
+                )
+                public_url = f"https://drive.google.com/uc?id={file_id}&export=download"
+                
+                async def generate():
+                    try:
+                        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                            async with client.stream("GET", public_url) as response:
+                                # Check status before starting to yield
+                                if response.status_code != 200:
+                                    error_msg = (
+                                        f"Failed to fetch from Google Drive public URL: "
+                                        f"{response.status_code} for file {file_id}"
+                                    )
+                                    logger.error(error_msg)
+                                    # Read error response body if available
+                                    try:
+                                        error_body = await response.aread()
+                                        logger.debug(f"Google Drive error response: {error_body}")
+                                    except:
+                                        pass
+                                    raise HTTPException(
+                                        status_code=response.status_code,
+                                        detail=error_msg
+                                    )
+                                # Stream the file content
+                                async for chunk in response.aiter_bytes():
+                                    yield chunk
+                    except HTTPException:
+                        raise
+                    except Exception as e:
+                        logger.error(f"Error proxying Google Drive file {file_id}: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to proxy file from Google Drive: {str(e)}"
+                        )
+                
+                return StreamingResponse(
+                    generate(),
                     media_type=media_type,
                     headers={"Content-Disposition": cd_inline}
                 )

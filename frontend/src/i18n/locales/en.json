@@ -117,7 +117,11 @@
     "backToDetails": "Back to book details",
     "previousPage": "Previous page (←)",
     "nextPage": "Next page (→)",
-    "navigateHint": "Use arrow keys (← →) or buttons to navigate"
+    "navigateHint": "Use arrow keys (← →) or buttons to navigate",
+    "tableOfContents": "Table of Contents",
+    "showToc": "Show Table of Contents",
+    "hideToc": "Hide Table of Contents",
+    "noTocAvailable": "No table of contents available"
   },
   "sort": {
     "newest": "Sort according to book date, newest first",

@@ -36,15 +36,6 @@ export function SelectBooksPage() {
     fetchBooks();
   }, [deviceKey, navigate]);
 
-  // Debounced search effect
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchBooks();
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
-
   const fetchBooks = async () => {
     setLoading(true);
     try {
@@ -142,7 +133,13 @@ export function SelectBooksPage() {
           </div>
 
           {/* Search Bar */}
-          <div className="flex gap-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              fetchBooks();
+            }}
+            className="flex gap-3"
+          >
             <input
               type="text"
               value={searchQuery}
@@ -151,13 +148,13 @@ export function SelectBooksPage() {
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <button
-              onClick={() => fetchBooks()}
+              type="submit"
               disabled={loading}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
             >
               {loading ? 'Đang tìm...' : 'Tìm kiếm'}
             </button>
-          </div>
+          </form>
 
           {error && (
             <div className="mt-3 text-red-600 text-sm bg-red-50 p-3 rounded">

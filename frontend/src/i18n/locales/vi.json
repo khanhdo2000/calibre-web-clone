@@ -117,7 +117,11 @@
     "backToDetails": "Quay lại thông tin sách",
     "previousPage": "Trang trước (←)",
     "nextPage": "Trang sau (→)",
-    "navigateHint": "Sử dụng phím mũi tên (← →) hoặc nút để điều hướng"
+    "navigateHint": "Sử dụng phím mũi tên (← →) hoặc nút để điều hướng",
+    "tableOfContents": "Mục lục",
+    "showToc": "Hiển thị mục lục",
+    "hideToc": "Ẩn mục lục",
+    "noTocAvailable": "Không có mục lục"
   },
   "sort": {
     "newest": "Sắp xếp theo ngày thêm sách, mới nhất trước",
