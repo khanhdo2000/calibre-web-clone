@@ -50,16 +50,16 @@ export function ReaderPage() {
       if (viewerRef.current) {
         const bookUrl = booksApi.getReadUrl(bookId, 'epub');
         
-        // Fetch EPUB as blob/arraybuffer so EPUB.js can unpack it client-side
+        // Fetch EPUB as arraybuffer so EPUB.js can unpack it client-side
         // This prevents EPUB.js from making additional HTTP requests for internal files
         const response = await fetch(bookUrl);
         if (!response.ok) {
           throw new Error(`Failed to load EPUB: ${response.statusText}`);
         }
-        const epubBlob = await response.blob();
+        const epubArrayBuffer = await response.arrayBuffer();
         
-        // Pass blob to EPUB.js instead of URL
-        const epubBook = ePub(epubBlob);
+        // Pass arraybuffer to EPUB.js instead of URL
+        const epubBook = ePub(epubArrayBuffer);
         epubBookRef.current = epubBook;
         
         // Load table of contents
