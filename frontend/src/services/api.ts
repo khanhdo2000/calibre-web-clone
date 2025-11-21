@@ -233,6 +233,11 @@ export const categoryGroupsApi = {
     return response.data;
   },
 
+  getBooks: async (id: number, options?: { page?: number; per_page?: number; sort?: string }): Promise<BookListResponse> => {
+    const response = await api.get(`/categories/${id}/books`, { params: options });
+    return response.data;
+  },
+
   reorder: async (categories: Array<{ id: number; display_order: number }>): Promise<void> => {
     await api.post('/categories/reorder', { categories });
   },

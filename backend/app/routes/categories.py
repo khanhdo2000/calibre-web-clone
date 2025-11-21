@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.category import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryList
 from app.services.category_service import CategoryService
 from app.services.calibre_db import calibre_db
+from app.services.cache import cache_service
 from app.routes.auth import get_current_user
 from app.models.user import User
 
@@ -182,6 +183,68 @@ async def get_category_tag_ids(
         raise
     except Exception as e:
         logger.error(f"Error getting tag IDs for category {category_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/{category_id}/books")
+async def get_category_books(
+    category_id: int,
+    page: int = 1,
+    per_page: int = 20,
+    sort: str = "new",
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get books belonging to a category (books with ANY of the category's tags).
+    This is optimized for the home page to reduce API calls.
+
+    - **category_id**: The category ID
+    - **page**: Page number (default: 1)
+    - **per_page**: Books per page (default: 20)
+    - **sort**: Sort order: new, old, abc, zyx (default: new)
+    """
+    try:
+        # Try to get from cache
+        cache_key = cache_service.cache_key(
+            "category:books",
+            id=category_id,
+            page=page,
+            per_page=per_page,
+            sort=sort
+        )
+        cached_result = await cache_service.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for category {category_id} books")
+            return cached_result
+
+        # Get tag IDs for this category
+        tag_ids = await category_service.get_category_tag_ids(db, category_id)
+
+        if not tag_ids:
+            return {"books": [], "total": 0, "page": page, "per_page": per_page}
+
+        # Get books from calibre_db with all these tag IDs
+        books, total = calibre_db.get_books_by_tag_ids(
+            tag_ids=tag_ids,
+            page=page,
+            per_page=per_page,
+            sort_param=sort
+        )
+
+        result = {
+            "books": [book.model_dump() for book in books],
+            "total": total,
+            "page": page,
+            "per_page": per_page
+        }
+
+        # Store in cache (TTL: 5 minutes for category books - shorter since books can change)
+        await cache_service.set(cache_key, result, ttl=300)
+        logger.debug(f"Stored category {category_id} books in cache")
+
+        return result
+    except Exception as e:
+        logger.error(f"Error getting books for category {category_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { categoryGroupsApi, booksApi } from '@/services/api';
+import { categoryGroupsApi } from '@/services/api';
 import type { CategoryGroup, Book } from '@/types';
 import { BookCard } from '@/components/BookCard';
 import { FolderTree, ChevronRight } from 'lucide-react';
@@ -36,48 +36,36 @@ export function HomePage() {
         return;
       }
 
-      // Fetch books for each category
+      // Fetch books for each category using the optimized endpoint (1 API call per category)
       const categoriesWithBooksData: CategoryWithBooks[] = [];
 
-      for (const category of categories) {
-        if (category.tags.length === 0) continue;
+      // Fetch books for all categories in parallel
+      const categoryBookPromises = categories
+        .filter(category => category.tags.length > 0)
+        .map(async (category) => {
+          try {
+            const result = await categoryGroupsApi.getBooks(category.id, {
+              page: 1,
+              per_page: booksPerCategory,
+              sort: 'new',
+            });
 
-        try {
-          // Fetch books from all tags in this category
-          const allBooksMap = new Map<number, Book>();
-
-          for (const tag of category.tags) {
-            try {
-              const result = await booksApi.getBooks({
-                tag_id: tag.id,
-                page: 1,
-                per_page: 50, // Fetch enough to show variety
-              });
-
-              result.books.forEach(book => {
-                allBooksMap.set(book.id, book);
-              });
-            } catch (err) {
-              console.error(`Error fetching books for tag ${tag.id}:`, err);
+            if (result.books.length > 0) {
+              return { category, books: result.books };
             }
+            return null;
+          } catch (err) {
+            console.error(`Error loading books for category ${category.id}:`, err);
+            return null;
           }
+        });
 
-          // Convert to array, sort by timestamp, and take first N books
-          const books = Array.from(allBooksMap.values())
-            .sort((a, b) => {
-              const timeA = new Date(a.timestamp || 0).getTime();
-              const timeB = new Date(b.timestamp || 0).getTime();
-              return timeB - timeA;
-            })
-            .slice(0, booksPerCategory);
-
-          if (books.length > 0) {
-            categoriesWithBooksData.push({ category, books });
-          }
-        } catch (err) {
-          console.error(`Error loading books for category ${category.id}:`, err);
+      const results = await Promise.all(categoryBookPromises);
+      results.forEach(result => {
+        if (result) {
+          categoriesWithBooksData.push(result);
         }
-      }
+      });
 
       setCategoriesWithBooks(categoriesWithBooksData);
     } catch (err: any) {

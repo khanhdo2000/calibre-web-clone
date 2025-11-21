@@ -237,6 +237,75 @@ class CalibreDatabase:
         finally:
             session.close()
 
+    def get_books_by_tag_ids(
+        self,
+        tag_ids: List[int],
+        page: int = 1,
+        per_page: int = 20,
+        sort_param: Optional[str] = "new",
+    ) -> tuple[List[Book], int]:
+        """Get paginated books that have ANY of the given tag IDs (for category pages)"""
+        if not self.Session:
+            raise FileNotFoundError(f"Calibre database not found at {self.db_path}")
+
+        if not tag_ids:
+            return [], 0
+
+        session = self.Session()
+        try:
+            # Build query: books with ANY of the given tags
+            query = session.query(Books).filter(
+                Books.tags.any(Tags.id.in_(tag_ids))
+            ).distinct()
+
+            # Apply sort order
+            order_by = self._get_sort_order(sort_param, None, None)
+            for order_clause in order_by:
+                query = query.order_by(order_clause)
+
+            # Get total count
+            total = query.count()
+
+            # Apply pagination
+            offset = (page - 1) * per_page
+            books_orm = query.limit(per_page).offset(offset).all()
+
+            # Convert ORM objects to Pydantic models
+            books = []
+            for book_orm in books_orm:
+                authors = [Author(id=a.id, name=a.name) for a in book_orm.authors]
+                tags = [Tag(id=t.id, name=t.name) for t in book_orm.tags]
+                series = None
+                if book_orm.series_rel:
+                    series = Series(id=book_orm.series_rel.id, name=book_orm.series_rel.name)
+                publisher = None
+                if book_orm.publishers_rel:
+                    publisher = Publisher(id=book_orm.publishers_rel.id, name=book_orm.publishers_rel.name)
+
+                book = Book(
+                    id=book_orm.id,
+                    title=book_orm.title or "Unknown",
+                    path=book_orm.path or "",
+                    has_cover=bool(book_orm.has_cover),
+                    uuid=book_orm.uuid,
+                    isbn=book_orm.isbn or "",
+                    lccn=book_orm.lccn or "",
+                    pubdate=book_orm.pubdate,
+                    timestamp=book_orm.timestamp,
+                    last_modified=book_orm.last_modified,
+                    authors=authors,
+                    tags=tags,
+                    series=series,
+                    publisher=publisher,
+                    file_formats=[],
+                )
+                books.append(book)
+
+            return books, total
+
+        finally:
+            session.close()
+
     def get_book(self, book_id: int) -> Optional[BookDetail]:
         """Get detailed information about a specific book"""
         if not self.Session:
@@ -404,7 +473,7 @@ class CalibreDatabase:
                 func.count(Books.id).label('count')
             ).outerjoin(Books.tags).group_by(Tags.id, Tags.name).order_by(Tags.name).all()
 
-            tags = [Tag(id=r.id, name=r.name, count=r.count) for r in results]
+            tags = [Tag(id=r.id, name=r.name, count=r.count) for r in results if r.id is not None]
             return tags
         finally:
             session.close()
