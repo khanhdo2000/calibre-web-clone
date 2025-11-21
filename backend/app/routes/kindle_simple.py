@@ -164,13 +164,15 @@ async def kindle_page(request: Request, key: str = None):
             border-radius: 4px;
             padding: 8px;
             margin-bottom: 6px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            overflow: hidden;
         }}
         .book-info {{
-            flex: 1;
-            min-width: 0;
+            overflow: hidden;
+            margin-right: 90px;
+        }}
+        .book-item .download-btn {{
+            float: right;
+            margin-left: 10px;
         }}
         .book-title {{
             font-size: 14px;
@@ -193,12 +195,11 @@ async def kindle_page(request: Request, key: str = None):
             display: inline-block;
             background: #2563eb;
             color: white;
-            padding: 6px 12px;
+            padding: 12px 20px;
             text-decoration: none;
             border-radius: 4px;
-            font-size: 13px;
+            font-size: 16px;
             white-space: nowrap;
-            flex-shrink: 0;
         }}
         .loading {{
             text-align: center;
@@ -235,8 +236,12 @@ async def kindle_page(request: Request, key: str = None):
     <h1>"{quote}"</h1>
 
     <div class="section">
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <div style="flex: 1;">
+        <div style="overflow: hidden;">
+            <div style="float: right; text-align: center; margin-left: 15px;">
+                <div style="color: #666; font-size: 11px; margin-bottom: 3px;">Quét QR:</div>
+                <img src="{qr_code_url}" alt="QR Code" width="100" height="100" style="border: 2px solid #ddd; border-radius: 4px;">
+            </div>
+            <div style="overflow: hidden;">
                 <h2 style="margin: 0 0 8px 0; font-size: 18px;">Ghép nối thiết bị</h2>
                 <div style="color: #666; font-size: 12px; margin-bottom: 3px;">Mã thiết bị:</div>
                 <div class="device-key" id="deviceKey">{device_key}</div>
@@ -246,10 +251,6 @@ async def kindle_page(request: Request, key: str = None):
                 <div style="color: #666; font-size: 11px; margin-top: 5px;">
                     Nhập tại: <strong>{frontend_url}/pair</strong>
                 </div>
-            </div>
-            <div style="text-align: center; flex-shrink: 0;">
-                <div style="color: #666; font-size: 11px; margin-bottom: 3px;">Quét QR:</div>
-                <img src="{qr_code_url}" alt="QR Code" width="100" height="100" style="border: 2px solid #ddd; border-radius: 4px;">
             </div>
         </div>
     </div>
@@ -437,12 +438,12 @@ async def kindle_page(request: Request, key: str = None):
                             '<a href="' + downloadUrl + '" class="download-btn" download>Tải về</a>' : '';
 
                         html += '<div class="book-item">' +
+                            downloadBtn +
                             '<div class="book-info">' +
                             '<div class="book-title">' + (book.title || 'Untitled') + '</div>' +
                             '<div class="book-author">' + formatAuthors(book.authors) + '</div>' +
                             '<div class="book-formats">Định dạng: ' + (book.file_formats ? book.file_formats.join(', ') : 'N/A') + '</div>' +
                             '</div>' +
-                            downloadBtn +
                             '</div>';
                     }}
                     listEl.innerHTML = html;

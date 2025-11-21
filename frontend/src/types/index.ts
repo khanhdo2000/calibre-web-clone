@@ -29,6 +29,36 @@ export interface Category {
   count: number;
 }
 
+export interface CategoryGroup {
+  id: number;
+  name: string;
+  description?: string;
+  display_order?: number;
+  tags: Tag[];
+  book_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CategoryGroupCreate {
+  name: string;
+  description?: string;
+  display_order?: number;
+  tag_ids: number[];
+}
+
+export interface CategoryGroupUpdate {
+  name?: string;
+  description?: string;
+  display_order?: number;
+  tag_ids?: number[];
+}
+
+export interface CategoryGroupList {
+  categories: CategoryGroup[];
+  total: number;
+}
+
 export interface Book {
   id: number;
   title: string;

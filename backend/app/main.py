@@ -7,7 +7,7 @@ from app.config import settings
 from app.services.cache import cache_service
 from app.services.calibre_watcher import calibre_watcher
 from app.database import init_db
-from app.routes import books, metadata, files, auth, user_features, admin, kindle_pair, kindle_simple
+from app.routes import books, metadata, files, auth, user_features, admin, kindle_pair, kindle_simple, kindle_email, categories
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +77,8 @@ app.include_router(files.router)
 app.include_router(admin.router)
 app.include_router(kindle_pair.router)
 app.include_router(kindle_simple.router)
+app.include_router(kindle_email.router)
+app.include_router(categories.router)
 
 
 @app.get("/")

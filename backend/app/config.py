@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     auth_cache_ttl: int = 300
     enable_cache: bool = True
 
+    # Email Configuration (for Send to Kindle)
+    # AWS SES Configuration
+    use_aws_ses: bool = False
+    ses_from_email: Optional[str] = None
+    ses_from_name: str = "Calibre Web Clone"
+    # SMTP Configuration (fallback or alternative)
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: str = "Calibre Web Clone"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]

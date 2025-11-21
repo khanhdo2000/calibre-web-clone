@@ -12,7 +12,7 @@ email-validator==2.1.0
 
 # Authentication
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-multipart==0.0.6
 
 # Cloud Storage
@@ -36,3 +36,6 @@ tqdm==4.66.1
 urllib3<2.1,>=1.25.4
 importlib-metadata>=4.0.0; python_version < "3.10"  # Backport for Python 3.9
 qrcode[pil]==7.4.2
+
+# Email (optional - only needed for SMTP fallback, not required for AWS SES)
+# aiosmtplib==3.0.1

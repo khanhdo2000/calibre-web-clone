@@ -1,22 +1,27 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { BookOpen, Users, Building2, FolderTree, Sparkles } from 'lucide-react';
+import { BookOpen, Users, Building2, FolderTree, Sparkles, Folders, Home } from 'lucide-react';
 
 export function Sidebar() {
   const { t } = useTranslation();
   const location = useLocation();
 
   const navItems = [
-    { path: '/', label: t('navigation.books'), icon: BookOpen },
+    { path: '/', label: t('navigation.home'), icon: Home },
+    { path: '/books', label: t('navigation.books'), icon: BookOpen },
     { path: '/discover', label: t('navigation.discover'), icon: Sparkles },
     { path: '/authors', label: t('navigation.authors'), icon: Users },
     { path: '/publishers', label: t('navigation.publishers'), icon: Building2 },
-    { path: '/categories', label: t('navigation.categories'), icon: FolderTree },
+    { path: '/tags', label: t('navigation.tags'), icon: FolderTree },
+    { path: '/categories', label: t('navigation.categories'), icon: Folders },
   ];
 
   const isActive = (path: string) => {
     if (path === '/') {
-      return location.pathname === '/' || location.pathname.startsWith('/page/');
+      return location.pathname === '/';
+    }
+    if (path === '/books') {
+      return location.pathname.startsWith('/books') || location.pathname.startsWith('/page/');
     }
     if (path === '/discover') {
       return location.pathname === '/discover';

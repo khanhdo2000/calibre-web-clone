@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 import logging
 
-from app.models.book import Author, Series, Publisher, Category
+from app.models.book import Author, Series, Publisher, Category as Tag
 from app.services.calibre_db import calibre_db
 from app.services.cache import cache_service
 
@@ -64,19 +64,19 @@ async def get_publishers():
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/categories", response_model=List[Category])
-async def get_categories():
-    """Get all categories (tags with book counts)"""
-    cache_key = "metadata:categories"
+@router.get("/tags", response_model=List[Tag])
+async def get_tags():
+    """Get all tags with book counts"""
+    cache_key = "metadata:tags"
     cached_data = await cache_service.get(cache_key)
 
     if cached_data:
-        return [Category(**cat) for cat in cached_data]
+        return [Tag(**tag) for tag in cached_data]
 
     try:
-        categories = calibre_db.get_all_categories()
-        await cache_service.set(cache_key, [cat.model_dump(mode='json') for cat in categories])
-        return categories
+        tags = calibre_db.get_all_categories()
+        await cache_service.set(cache_key, [tag.model_dump(mode='json') for tag in tags])
+        return tags
     except Exception as e:
-        logger.error(f"Error getting categories: {e}")
+        logger.error(f"Error getting tags: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

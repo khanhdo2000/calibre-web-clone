@@ -1,138 +1,100 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { booksApi, metadataApi } from '@/services/api';
+import { Link } from 'react-router-dom';
+import { categoryGroupsApi, booksApi } from '@/services/api';
+import type { CategoryGroup, Book } from '@/types';
 import { BookCard } from '@/components/BookCard';
-import { Pagination } from '@/components/Pagination';
-import { SortButtons } from '@/components/SortButtons';
-import type { BookListResponse } from '@/types';
+import { FolderTree, ChevronRight } from 'lucide-react';
+
+interface CategoryWithBooks {
+  category: CategoryGroup;
+  books: Book[];
+}
 
 export function HomePage() {
   const { t } = useTranslation();
-  const params = useParams();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [data, setData] = useState<BookListResponse | null>(null);
+  const [categoriesWithBooks, setCategoriesWithBooks] = useState<CategoryWithBooks[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterTitle, setFilterTitle] = useState<string>(t('home.recentlyAdded'));
-
-  // Extract route parameters
-  const page = parseInt(params.page || '1');
-  const perPage = 60;
-  
-  // Determine data type from URL path
-  const pathname = window.location.pathname;
-  let dataType: string | null = null;
-  if (pathname.startsWith('/category/')) {
-    dataType = 'category';
-  } else if (pathname.startsWith('/author/')) {
-    dataType = 'author';
-  } else if (pathname.startsWith('/publisher/')) {
-    dataType = 'publisher';
-  } else if (pathname.startsWith('/series/')) {
-    dataType = 'series';
-  }
-  
-  const itemId = params.id ? parseInt(params.id) : undefined;
-  // Get sort_param from route params or query params, default to 'new'
-  const sortParamValue = params.sort_param || searchParams.get('sort') || 'new';
-  const sortParam = sortParamValue as 'new' | 'old' | 'abc' | 'zyx' | 'authaz' | 'authza' | 'pubnew' | 'pubold' | 'seriesasc' | 'seriesdesc';
-
-  // Map route data type to filter type
-  const authorId = dataType === 'author' ? itemId : undefined;
-  const tagId = dataType === 'category' ? itemId : undefined;
-  const publisherId = dataType === 'publisher' ? itemId : undefined;
-  const seriesId = dataType === 'series' ? itemId : undefined;
+  const booksPerCategory = 12; // Show 12 books per category on homepage
 
   useEffect(() => {
-    loadBooks();
-    loadFilterTitle();
-  }, [page, authorId, tagId, publisherId, seriesId, sortParam]);
+    loadCategoriesWithBooks();
+  }, []);
 
-  const loadFilterTitle = async () => {
-    if (authorId) {
-      try {
-        const authors = await metadataApi.getAuthors();
-        const author = authors.find(a => a.id === authorId);
-        setFilterTitle(author ? t('home.booksByAuthor', { author: author.name }) : t('home.booksByAuthorDefault'));
-      } catch (err) {
-        setFilterTitle(t('home.booksByAuthorDefault'));
-      }
-    } else if (tagId !== undefined) {
-      if (tagId === -1) {
-        setFilterTitle(t('home.categoryNone'));
-      } else {
-        try {
-          const categories = await metadataApi.getCategories();
-          const category = categories.find(c => c.id === tagId);
-          setFilterTitle(category ? t('home.category', { name: category.name }) : t('home.categoryDefault'));
-        } catch (err) {
-          setFilterTitle(t('home.categoryDefault'));
-        }
-      }
-    } else if (publisherId) {
-      try {
-        const publishers = await metadataApi.getPublishers();
-        const publisher = publishers.find(p => p.id === publisherId);
-        setFilterTitle(publisher ? t('home.booksFromPublisher', { publisher: publisher.name }) : t('home.booksFromPublisherDefault'));
-      } catch (err) {
-        setFilterTitle(t('home.booksFromPublisherDefault'));
-      }
-    } else if (seriesId) {
-      try {
-        const series = await metadataApi.getSeries();
-        const s = series.find(s => s.id === seriesId);
-        setFilterTitle(s ? t('home.series', { name: s.name }) : t('home.seriesDefault'));
-      } catch (err) {
-        setFilterTitle(t('home.seriesDefault'));
-      }
-    } else {
-      setFilterTitle(t('home.recentlyAdded'));
-    }
-  };
-
-  const loadBooks = async () => {
+  const loadCategoriesWithBooks = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await booksApi.getBooks({
-        page,
-        per_page: perPage,
-        sort_param: sortParam,
-        author_id: authorId,
-        publisher_id: publisherId,
-        series_id: seriesId,
-        tag_id: tagId,
-      });
-      setData(response);
-    } catch (err) {
-      setError(t('home.failedToLoad'));
-      console.error(err);
+      // Fetch all categories
+      const categoriesData = await categoryGroupsApi.getAll();
+      const categories = categoriesData.categories;
+
+      if (categories.length === 0) {
+        setCategoriesWithBooks([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch books for each category
+      const categoriesWithBooksData: CategoryWithBooks[] = [];
+
+      for (const category of categories) {
+        if (category.tags.length === 0) continue;
+
+        try {
+          // Fetch books from all tags in this category
+          const allBooksMap = new Map<number, Book>();
+
+          for (const tag of category.tags) {
+            try {
+              const result = await booksApi.getBooks({
+                tag_id: tag.id,
+                page: 1,
+                per_page: 50, // Fetch enough to show variety
+              });
+
+              result.books.forEach(book => {
+                allBooksMap.set(book.id, book);
+              });
+            } catch (err) {
+              console.error(`Error fetching books for tag ${tag.id}:`, err);
+            }
+          }
+
+          // Convert to array, sort by timestamp, and take first N books
+          const books = Array.from(allBooksMap.values())
+            .sort((a, b) => {
+              const timeA = new Date(a.timestamp || 0).getTime();
+              const timeB = new Date(b.timestamp || 0).getTime();
+              return timeB - timeA;
+            })
+            .slice(0, booksPerCategory);
+
+          if (books.length > 0) {
+            categoriesWithBooksData.push({ category, books });
+          }
+        } catch (err) {
+          console.error(`Error loading books for category ${category.id}:`, err);
+        }
+      }
+
+      setCategoriesWithBooks(categoriesWithBooksData);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || t('categories.failedToLoad'));
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePageChange = (newPage: number) => {
-    if (dataType && itemId) {
-      // Navigate with route parameters
-      navigate(`/${dataType}/${sortParam}/${itemId}/page/${newPage}`);
-    } else {
-      // Navigate to page route - preserve sort query param if not default
-      const sortQuery = sortParam !== 'new' ? `?sort=${sortParam}` : '';
-      navigate(newPage > 1 ? `/page/${newPage}${sortQuery}` : `/${sortQuery}`);
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-96">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">{t('home.loadingBooks')}</p>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-gray-600">{t('common.loading')}</p>
+          </div>
         </div>
       </div>
     );
@@ -140,57 +102,101 @@ export function HomePage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-96">
-        <div className="text-center text-red-600">
-          <p className="text-xl font-semibold mb-2">{t('common.error')}</p>
-          <p>{error}</p>
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
         </div>
       </div>
     );
   }
 
-  if (!data || data.books.length === 0) {
+  if (categoriesWithBooks.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-96">
-        <div className="text-center text-gray-600">
-          <p className="text-xl font-semibold mb-2">{t('home.noBooksFound')}</p>
-          <p>{t('home.libraryEmpty')}</p>
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-gray-50 rounded-lg p-12 text-center">
+          <FolderTree className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">
+            {t('categories.empty')}
+          </h2>
+          <p className="text-gray-500 mb-4">
+            {t('categories.createFirst')}
+          </p>
+          <Link
+            to="/books"
+            className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            {t('navigation.books')}
+          </Link>
         </div>
       </div>
     );
   }
-
-  const totalPages = Math.ceil(data.total / perPage);
 
   return (
-    <div>
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">{filterTitle}</h1>
-          <p className="text-gray-600 mt-1">
-            {t('home.showing', {
-              start: (page - 1) * perPage + 1,
-              end: Math.min(page * perPage, data.total),
-              total: data.total
-            })}
-          </p>
-        </div>
-        <SortButtons currentSort={sortParam} showSeriesSort={dataType === 'series'} />
+    <div className="container mx-auto px-4 py-8">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">
+          {t('home.title')}
+        </h1>
+        <p className="text-gray-600">
+          {t('home.subtitle')}
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8 gap-y-10">
-        {data.books.map((book) => (
-          <BookCard key={book.id} book={book} />
+      {/* Categories with Books */}
+      <div className="space-y-12">
+        {categoriesWithBooks.map(({ category, books }) => (
+          <div key={category.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            {/* Category Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <FolderTree className="w-6 h-6 text-blue-600" />
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">
+                    {category.name}
+                  </h2>
+                  {category.description && (
+                    <p className="text-gray-600 text-sm mt-1">
+                      {category.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Link
+                to={`/categories/${category.id}`}
+                className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium transition-colors"
+              >
+                {t('home.viewAll')}
+                <ChevronRight className="w-5 h-5" />
+              </Link>
+            </div>
+
+            {/* Books Horizontal Scroll */}
+            <div className="relative -mx-2">
+              <div className="overflow-x-auto scrollbar-hide pb-2">
+                <div className="flex gap-4 px-2" style={{ width: 'max-content' }}>
+                  {books.map((book) => (
+                    <div key={book.id} className="w-40 flex-shrink-0">
+                      <BookCard book={book} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         ))}
       </div>
 
-      {totalPages > 1 && (
-        <Pagination
-          currentPage={page}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-        />
-      )}
+      {/* Link to All Books */}
+      <div className="mt-12 text-center">
+        <Link
+          to="/books"
+          className="inline-block bg-gray-100 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+        >
+          {t('home.browseAllBooks')}
+        </Link>
+      </div>
     </div>
   );
 }

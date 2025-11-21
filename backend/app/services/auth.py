@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
+import secrets
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
@@ -11,8 +12,6 @@ from app.models.user import User
 from app.services.cache import cache_service
 
 logger = logging.getLogger(__name__)
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class AuthService:
@@ -26,11 +25,17 @@ class AuthService:
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
-        return pwd_context.verify(plain_password, hashed_password)
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
 
     def get_password_hash(self, password: str) -> str:
         """Hash a password"""
-        return pwd_context.hash(password)
+        return bcrypt.hashpw(
+            password.encode('utf-8'),
+            bcrypt.gensalt(rounds=12)
+        ).decode('utf-8')
 
     def create_access_token(self, data: dict) -> str:
         """Create JWT access token"""
@@ -56,10 +61,13 @@ class AuthService:
         try:
             # Decode token
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            user_id: int = payload.get("sub")
+            user_id_str = payload.get("sub")
 
-            if user_id is None:
+            if user_id_str is None:
                 return None
+
+            # Convert string to int (sub is stored as string per JWT spec)
+            user_id = int(user_id_str)
 
             # Check cache first (if enabled)
             if settings.enable_auth_cache:
@@ -80,8 +88,9 @@ class AuthService:
                 user_dict = {
                     "id": user.id,
                     "email": user.email,
-                    "username": user.username,
+                    "username": user.username,  # Can be None
                     "full_name": user.full_name,
+                    "kindle_email": user.kindle_email,  # Can be None
                     "is_active": user.is_active,
                     "is_admin": user.is_admin,
                 }
@@ -123,13 +132,21 @@ class AuthService:
         self,
         db: AsyncSession,
         email: str,
-        username: str,
         password: str,
         full_name: Optional[str] = None,
+        username: Optional[str] = None,
         is_admin: bool = False,
     ) -> User:
-        """Create a new user"""
+        """Create a new user with email verification token"""
         hashed_password = self.get_password_hash(password)
+
+        # Generate username from email if not provided
+        if not username:
+            username = email.split('@')[0]
+
+        # Generate verification token
+        verification_token = secrets.token_urlsafe(32)
+        token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
         user = User(
             email=email,
@@ -138,9 +155,64 @@ class AuthService:
             full_name=full_name,
             is_admin=is_admin,
             is_active=True,
+            email_verified=False,
+            verification_token=verification_token,
+            verification_token_expires=token_expires,
         )
 
         db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        return user
+
+    def generate_verification_token(self) -> tuple[str, datetime]:
+        """Generate a new verification token and expiration"""
+        token = secrets.token_urlsafe(32)
+        expires = datetime.now(timezone.utc) + timedelta(hours=24)
+        return token, expires
+
+    async def verify_email(self, db: AsyncSession, token: str) -> Optional[User]:
+        """Verify user email with token"""
+        result = await db.execute(
+            select(User).where(User.verification_token == token)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            return None
+
+        # Check if token is expired
+        if user.verification_token_expires and user.verification_token_expires < datetime.now(timezone.utc):
+            return None
+
+        # Mark email as verified
+        user.email_verified = True
+        user.verification_token = None
+        user.verification_token_expires = None
+        await db.commit()
+        await db.refresh(user)
+
+        # Invalidate cache
+        await self.invalidate_user_cache(user.id)
+
+        return user
+
+    async def resend_verification(self, db: AsyncSession, email: str) -> Optional[User]:
+        """Generate new verification token for a user"""
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            return None
+
+        if user.email_verified:
+            return None  # Already verified
+
+        # Generate new token
+        token, expires = self.generate_verification_token()
+        user.verification_token = token
+        user.verification_token_expires = expires
         await db.commit()
         await db.refresh(user)
 

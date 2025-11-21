@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/contexts/AuthContext';
 import { SearchBar } from './SearchBar';
-import { BookOpen, Users, Building2, FolderTree, Menu, X } from 'lucide-react';
+import { BookOpen, Users, Building2, FolderTree, Menu, X, LogIn, LogOut, User } from 'lucide-react';
 
 export function Header() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
@@ -45,6 +48,37 @@ export function Header() {
           {/* Search bar */}
           <div className="flex-1">
             <SearchBar />
+          </div>
+
+          {/* Auth buttons */}
+          <div className="flex items-center gap-2">
+            {user ? (
+              <>
+                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700">
+                  <User className="w-4 h-4" />
+                  <span className="max-w-[150px] truncate">{user.full_name || user.email.split('@')[0]}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    logout();
+                    navigate('/');
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  title={t('auth.logout')}
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden md:inline">{t('auth.logout')}</span>
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                <span className="hidden md:inline">{t('auth.login.button')}</span>
+              </Link>
+            )}
           </div>
         </div>
 
