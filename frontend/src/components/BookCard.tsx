@@ -16,7 +16,7 @@ export function BookCard({ book }: BookCardProps) {
   return (
     <div className="flex flex-col">
       <Link to={`/book/${book.id}`}>
-        <div className="aspect-[2/3] bg-gray-200 relative overflow-hidden rounded mb-3">
+        <div className="aspect-[2/3] bg-gray-200 relative overflow-hidden rounded mb-2 md:mb-3">
           {coverUrl ? (
             <img
               src={coverUrl}
@@ -26,19 +26,19 @@ export function BookCard({ book }: BookCardProps) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <BookOpen className="w-16 h-16 text-gray-400" />
+              <BookOpen className="w-12 h-12 md:w-16 md:h-16 text-gray-400" />
             </div>
           )}
         </div>
       </Link>
 
       <Link to={`/book/${book.id}`}>
-        <h3 className="font-semibold text-base mb-2 line-clamp-2 hover:text-blue-600 leading-snug">
+        <h3 className="font-semibold text-sm md:text-base mb-1 md:mb-2 line-clamp-2 hover:text-blue-600 leading-snug">
           {book.title}
         </h3>
       </Link>
 
-      <p className="text-sm text-gray-600 leading-snug">
+      <p className="text-xs md:text-sm text-gray-600 leading-snug line-clamp-1">
         {book.authors.length > 0 ? (
           book.authors.map((author, index) => (
             <span key={author.id}>
