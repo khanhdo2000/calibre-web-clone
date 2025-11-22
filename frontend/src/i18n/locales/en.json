@@ -40,8 +40,8 @@
     "resultsFor": "Search: \"{{query}}\""
   },
   "home": {
-    "title": "Welcome to Your Library",
-    "subtitle": "Explore books organized by categories",
+    "title": "Hello! 👋",
+    "subtitle": "Discover your favorite books",
     "viewAll": "View All",
     "browseAllBooks": "Browse All Books",
     "recentlyAdded": "Recently Added",
