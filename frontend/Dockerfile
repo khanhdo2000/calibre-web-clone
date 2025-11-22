@@ -13,6 +13,11 @@ RUN npm ci
 COPY . .
 
 # Build the application
+# VITE_API_URL defaults to '/api' in api.ts, which works with nginx proxy
+# To override, set build arg: --build-arg VITE_API_URL=https://api.example.com/api
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=$VITE_API_URL
+
 RUN npm run build
 
 # Production stage

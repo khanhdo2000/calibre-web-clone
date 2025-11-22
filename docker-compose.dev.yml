@@ -1,0 +1,31 @@
+# Development override for docker-compose
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Or set in .env: COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+
+services:
+  backend:
+    # Override: Enable hot reload for development
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Override: Mount backend source code for hot reload
+    volumes:
+      - ./backend:/app
+      # Override: Use local dev calibre library path
+      - ${CALIBRE_LIBRARY_PATH:-./calibre-library}:/calibre-library:ro
+      - ./service-account.json:/credentials.json:ro
+      - rss-epubs:/data/rss-epubs
+
+  frontend:
+    build:
+      context: ./frontend
+      # Override: Use dev Dockerfile (Vite dev server)
+      dockerfile: Dockerfile.dev
+    # Override: Use Vite dev server port (5173)
+    ports:
+      - "${FRONTEND_PORT:-3001}:5173"
+    # Override: Dev mode uses runtime env (not build-time)
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-/api}
+    # Override: Mount source code for hot reload
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules

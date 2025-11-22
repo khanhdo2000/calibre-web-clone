@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { categoryGroupsApi, booksApi } from '@/services/api';
+import { categoryGroupsApi } from '@/services/api';
 import type { CategoryGroup, Book } from '@/types';
 import { BookCard } from '@/components/BookCard';
 import { FolderTree, ArrowLeft, Tag as TagIcon } from 'lucide-react';
@@ -44,7 +44,7 @@ export function CategoryViewPage() {
   };
 
   const loadBooks = async () => {
-    if (!category || category.tags.length === 0) {
+    if (!category) {
       setBooks([]);
       setTotalBooks(0);
       setLoadingBooks(false);
@@ -53,42 +53,14 @@ export function CategoryViewPage() {
 
     setLoadingBooks(true);
     try {
-      // Fetch books for each tag and combine/deduplicate results
-      const tagIds = category.tags.map(t => t.id);
-      const allBooksMap = new Map<number, Book>(); // Use Map to deduplicate by book ID
-
-      // Fetch books for each tag
-      for (const tagId of tagIds) {
-        try {
-          const result = await booksApi.getBooks({
-            tag_id: tagId,
-            page: 1,
-            per_page: 100, // Fetch more books per tag
-          });
-
-          // Add books to map (deduplicates automatically)
-          result.books.forEach(book => {
-            allBooksMap.set(book.id, book);
-          });
-        } catch (err) {
-          console.error(`Error fetching books for tag ${tagId}:`, err);
-        }
-      }
-
-      // Convert map to array and sort by timestamp (newest first)
-      const allBooks = Array.from(allBooksMap.values()).sort((a, b) => {
-        const timeA = new Date(a.timestamp || 0).getTime();
-        const timeB = new Date(b.timestamp || 0).getTime();
-        return timeB - timeA;
+      // Use the dedicated category books endpoint
+      const result = await categoryGroupsApi.getBooks(category.id, {
+        page,
+        per_page: perPage,
       });
 
-      // Paginate the results
-      const startIndex = (page - 1) * perPage;
-      const endIndex = startIndex + perPage;
-      const paginatedBooks = allBooks.slice(startIndex, endIndex);
-
-      setBooks(paginatedBooks);
-      setTotalBooks(allBooks.length);
+      setBooks(result.books);
+      setTotalBooks(result.total);
     } catch (err: any) {
       setError(err.response?.data?.detail || t('categories.failedToLoadBooks'));
     } finally {

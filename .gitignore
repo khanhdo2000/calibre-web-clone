@@ -53,3 +53,4 @@ logs/
 # calibre-library/
 # But exclude scripts
 !scripts/
+backend/scripts

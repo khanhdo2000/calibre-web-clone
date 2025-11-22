@@ -1,0 +1,28 @@
+# Production override for docker-compose
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# NOTE: Base docker-compose.yml is already production-ready.
+# This file exists for explicit production deployments and documentation.
+#
+# Environment variables to set for production:
+# - CALIBRE_LIBRARY_PATH: Path to calibre library on production server (default: /opt/calibre-library-read)
+# - VITE_API_URL: Frontend API URL for build (default: /api, works with nginx proxy)
+# - DATABASE_URL: PostgreSQL connection string
+# - SECRET_KEY: Secret key for JWT tokens
+# - FRONTEND_URL: Frontend URL for CORS
+
+version: '3.8'
+
+services:
+  # Backend is already production-ready in base compose file
+  # No overrides needed
+
+  # Frontend: Production configuration with Nginx
+  frontend:
+    build:
+      dockerfile: Dockerfile
+      args:
+        # Override if you need absolute URL instead of '/api' proxy
+        - VITE_API_URL=${VITE_API_URL:-/api}
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"

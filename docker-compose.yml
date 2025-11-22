@@ -1,26 +1,4 @@
-version: '3.8'
-
 services:
-  # PostgreSQL database - using existing server instance
-  # Remove this service if using external PostgreSQL
-  # postgres:
-  #   image: postgres:15-alpine
-  #   container_name: calibre-postgres
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_DB: calibre_web
-  #     POSTGRES_USER: calibre
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calibre_password_change_me}
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U calibre"]
-  #     interval: 10s
-  #     timeout: 3s
-  #     retries: 3
-
   # Redis cache
   redis:
     image: redis:7-alpine
@@ -44,53 +22,65 @@ services:
     container_name: calibre-backend
     restart: unless-stopped
     ports:
-      - "8080:8000"
+      - "8000:8000"
+    # Production-ready by default (no reload)
+    # Use docker-compose.dev.yml to enable hot reload for local development
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
-      # Calibre
+      # Calibre library path
       - CALIBRE_LIBRARY_PATH=/calibre-library
-      - WATCH_CALIBRE_DB=${WATCH_CALIBRE_DB:-true}
+      - WATCH_CALIBRE_DB=${WATCH_CALIBRE_DB}
 
-      # Database - using existing PostgreSQL server
+      # Database - external PostgreSQL server
       # Format: postgresql+asyncpg://user:password@host:port/database
-      # For server deployment: Use server's hostname/IP instead of 'postgres'
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://calibre:ZBuJqsMtI2gKE0gosZuohPmLphaSawnJuX7QFMfEkFh1JH6GJoonre3AbLbwOrAu@31.97.70.110:5432/calibre_web}
+      - DATABASE_URL=${DATABASE_URL}
 
       # Redis
-      - REDIS_URL=redis://redis:6379
-      - CACHE_TTL=3600
-      - ENABLE_AUTH_CACHE=true
-      - ENABLE_CACHE=${ENABLE_CACHE:-true}
+      - REDIS_URL=${REDIS_URL}
+      - CACHE_TTL=${CACHE_TTL}
+      - ENABLE_AUTH_CACHE=${ENABLE_AUTH_CACHE}
+      - ENABLE_CACHE=${ENABLE_CACHE}
 
       # API
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost,http://localhost:8080
+      - API_HOST=${API_HOST}
+      - API_PORT=${API_PORT}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - FRONTEND_URL=${FRONTEND_URL}
 
       # Authentication
-      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      - SECRET_KEY=${SECRET_KEY}
 
       # Google Drive (optional)
-      - USE_GOOGLE_DRIVE=${USE_GOOGLE_DRIVE:-false}
-      - GOOGLE_DRIVE_CREDENTIALS_PATH=${GOOGLE_DRIVE_CREDENTIALS_PATH:-}
-      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-}
+      - USE_GOOGLE_DRIVE=${USE_GOOGLE_DRIVE}
+      - GOOGLE_DRIVE_CREDENTIALS_PATH=${GOOGLE_DRIVE_CREDENTIALS_PATH}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
 
       # S3 (optional)
-      - USE_S3_COVERS=${USE_S3_COVERS:-true}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_REGION=${AWS_REGION:-ap-southeast-1}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-cdn.mnd.vn}
+      - USE_S3_COVERS=${USE_S3_COVERS}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+
+      # AWS SES Email Service
+      - USE_AWS_SES=${USE_AWS_SES}
+      - SES_FROM_EMAIL=${SES_FROM_EMAIL}
+      - SES_FROM_NAME=${SES_FROM_NAME}
+
+      # RSS to EPUB
+      - RSS_EPUB_OUTPUT_DIR=${RSS_EPUB_OUTPUT_DIR}
 
     volumes:
-      # Mount your Calibre library here - For server deployment use absolute path
-      # Local dev: ./calibre-library:/calibre-library
-      # Server: /opt/calibre-library:/calibre-library
+      # Mount Calibre library
+      # Production: /opt/calibre-library:/calibre-library:ro
+      # Local dev: Override with docker-compose.dev.yml
       - ${CALIBRE_LIBRARY_PATH:-/opt/calibre-library}:/calibre-library:ro
       # Google Drive credentials (if using)
-      - ${GOOGLE_DRIVE_CREDENTIALS_PATH:-./credentials.json}:/credentials.json:ro
+      - ./service-account.json:/credentials.json:ro
+      # RSS-generated EPUBs storage
+      - rss-epubs:/data/rss-epubs
+      # Note: Source code mounting for hot reload is done in docker-compose.dev.yml
     depends_on:
-      # postgres:
-      #   condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -103,16 +93,19 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      # Production by default (static build with Nginx)
+      # Use docker-compose.dev.yml to override with dev server
+      dockerfile: ${FRONTEND_DOCKERFILE:-Dockerfile}
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api}
     container_name: calibre-frontend
     restart: unless-stopped
-    ports:
-      - "3002:80"
+    # Ports are defined in override files:
+    # - docker-compose.dev.yml: 3001:5173 (Vite dev server)
+    # - docker-compose.prod.yml: 3001:80 (Nginx production)
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://localhost:8080/api
 
 volumes:
-  # postgres-data:  # Not needed if using external PostgreSQL
   redis-data:
+  rss-epubs:
