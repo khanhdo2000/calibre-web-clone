@@ -243,4 +243,48 @@ export const categoryGroupsApi = {
   },
 };
 
+// RSS Books API
+export interface RssFeed {
+  id: number;
+  name: string;
+  url: string;
+  category: string | null;
+  max_articles: number;
+  enabled: boolean;
+}
+
+export interface RssGeneratedBook {
+  id: number;
+  feed_id: number;
+  title: string;
+  filename: string;
+  file_size: number | null;
+  article_count: number;
+  generation_date: string;
+  calibre_book_id: number | null;
+}
+
+export const rssBooksApi = {
+  getFeeds: async (): Promise<RssFeed[]> => {
+    const response = await api.get('/rss/feeds');
+    return response.data;
+  },
+
+  getBooks: async (feedId?: number, limit = 50): Promise<RssGeneratedBook[]> => {
+    const params: { feed_id?: number; limit: number } = { limit };
+    if (feedId) params.feed_id = feedId;
+    const response = await api.get('/rss/books', { params });
+    return response.data;
+  },
+
+  getDownloadUrl: (bookId: number): string => {
+    return `${API_BASE_URL}/rss/books/${bookId}/download`;
+  },
+
+  generateFeed: async (feedId: number): Promise<{ success: boolean; files_generated: number; files: string[] }> => {
+    const response = await api.post(`/rss/generate/${feedId}`);
+    return response.data;
+  },
+};
+
 export default api;

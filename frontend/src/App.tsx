@@ -19,6 +19,7 @@ import { SelectBooksPage } from './pages/SelectBooksPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { RssBooksPage } from './pages/RssBooksPage';
 
 function App() {
   return (
@@ -36,7 +37,7 @@ function App() {
             element={
               <div className="min-h-screen bg-gray-50 flex">
                 <Sidebar />
-                <div className="flex-1 flex flex-col">
+                <div className="flex-1 flex flex-col min-w-0">
                   <Header />
                   <main className="flex-1 p-4">
                     <Routes>
@@ -61,6 +62,7 @@ function App() {
                       <Route path="/categories" element={<CategoriesPage />} />
                       <Route path="/categories/manage" element={<CategoriesManagementPage />} />
                       <Route path="/categories/:id" element={<CategoryViewPage />} />
+                      <Route path="/news" element={<RssBooksPage />} />
                     </Routes>
                   </main>
                 </div>

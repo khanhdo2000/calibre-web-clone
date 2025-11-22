@@ -36,7 +36,7 @@ export function PublishersPage() {
       getKey={(publisher) => publisher.id}
       getCount={(publisher) => publisher.count || 0}
       getName={(publisher) => publisher.name}
-      getLink={(publisher) => `/publisher/stored/${publisher.id}`}
+      getLink={(publisher) => `/publisher/new/${publisher.id}`}
       loading={loading}
       error={error}
       searchTerm={searchTerm}

@@ -7,7 +7,8 @@ from app.config import settings
 from app.services.cache import cache_service
 from app.services.calibre_watcher import calibre_watcher
 from app.database import init_db
-from app.routes import books, metadata, files, auth, user_features, admin, kindle_pair, kindle_simple, kindle_email, categories
+from app.routes import books, metadata, files, auth, user_features, admin, kindle_pair, kindle_simple, kindle_email, categories, rss_feeds
+from app.services.rss_epub.scheduler import init_rss_scheduler, get_rss_scheduler
 
 # Configure logging
 logging.basicConfig(
@@ -44,11 +45,30 @@ async def lifespan(app: FastAPI):
     if settings.use_s3_covers:
         logger.info("S3 cover storage enabled")
 
+    # Initialize RSS scheduler
+    try:
+        init_rss_scheduler(
+            output_dir=settings.rss_epub_output_dir,
+            calibre_library_path=settings.calibre_library_path,
+            auto_start=True,
+            hour=settings.rss_generation_hour,
+            minute=settings.rss_generation_minute
+        )
+        logger.info(f"RSS scheduler initialized - daily at {settings.rss_generation_hour:02d}:{settings.rss_generation_minute:02d}")
+    except Exception as e:
+        logger.warning(f"Failed to initialize RSS scheduler: {e}")
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
     calibre_watcher.stop()
+
+    # Stop RSS scheduler
+    scheduler = get_rss_scheduler()
+    if scheduler:
+        scheduler.stop()
+
     await cache_service.disconnect()
 
 
@@ -79,6 +99,7 @@ app.include_router(kindle_pair.router)
 app.include_router(kindle_simple.router)
 app.include_router(kindle_email.router)
 app.include_router(categories.router)
+app.include_router(rss_feeds.router)
 
 
 @app.get("/")

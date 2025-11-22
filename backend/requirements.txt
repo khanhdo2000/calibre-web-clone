@@ -39,3 +39,11 @@ qrcode[pil]==7.4.2
 
 # Email (optional - only needed for SMTP fallback, not required for AWS SES)
 # aiosmtplib==3.0.1
+
+# RSS to EPUB
+feedparser==6.0.11
+ebooklib==0.18
+readability-lxml==0.8.1
+lxml[html_clean]==5.1.0
+apscheduler==3.10.4
+Pillow>=10.0.0

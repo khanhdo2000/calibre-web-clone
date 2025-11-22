@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     smtp_from_email: Optional[str] = None
     smtp_from_name: str = "Calibre Web Clone"
 
+    # RSS to EPUB Configuration
+    rss_epub_output_dir: str = "/data/rss-epubs"
+    rss_generation_hour: int = 6  # Hour to run daily generation (0-23)
+    rss_generation_minute: int = 0  # Minute to run daily generation (0-59)
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]

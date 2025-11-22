@@ -272,7 +272,7 @@ export function BookDetailPage() {
                   <div>
                     <span className="text-gray-600 font-medium">{t('book.detail.publisher')} </span>
                     <Link
-                      to={`/?publisher=${encodeURIComponent(book.publisher.name)}`}
+                      to={`/publisher/new/${book.publisher.id}`}
                       className="text-gray-800 hover:text-blue-600 hover:underline"
                     >
                       {book.publisher.name}
@@ -314,7 +314,7 @@ export function BookDetailPage() {
                   {book.tags.map((tag) => (
                     <Link
                       key={tag.id}
-                      to={`/?tag=${encodeURIComponent(tag.name)}`}
+                      to={`/category/new/${tag.id}`}
                       className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm hover:bg-blue-100 hover:text-blue-700 transition-colors"
                     >
                       {tag.name}

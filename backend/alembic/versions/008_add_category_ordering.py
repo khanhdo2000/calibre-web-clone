@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '008_add_category_ordering'
-down_revision = '007_add_categories'
+revision = '008'
+down_revision = '007'
 branch_labels = None
 depends_on = None
 

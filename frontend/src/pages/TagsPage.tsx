@@ -36,7 +36,7 @@ export function TagsPage() {
       getKey={(tag) => tag.id}
       getCount={(tag) => tag.count}
       getName={(tag) => tag.name}
-      getLink={(tag) => tag.id === -1 ? '/category/stored/-1' : `/category/stored/${tag.id}`}
+      getLink={(tag) => tag.id === -1 ? '/category/new/-1' : `/category/new/${tag.id}`}
       loading={loading}
       error={error}
       searchTerm={searchTerm}

@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.config import settings
 from app.database import Base
 from app.models.user import User, Favorite, ReadingProgress, ReadingList, ReadingListItem
+from app.models.rss_feed import RssFeed, RssGeneratedBook
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -26,7 +27,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Override sqlalchemy.url with our settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Convert async URL to sync for migrations
+sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+config.set_main_option("sqlalchemy.url", sync_url)
 
 
 def run_migrations_offline() -> None:

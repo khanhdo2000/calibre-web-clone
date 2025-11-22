@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { BookOpen, Users, Building2, FolderTree, Sparkles, Folders, Home } from 'lucide-react';
+import { BookOpen, Users, Building2, FolderTree, Sparkles, Folders, Home, Newspaper } from 'lucide-react';
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -14,6 +14,7 @@ export function Sidebar() {
     { path: '/publishers', label: t('navigation.publishers'), icon: Building2 },
     { path: '/tags', label: t('navigation.tags'), icon: FolderTree },
     { path: '/categories', label: t('navigation.categories'), icon: Folders },
+    { path: '/news', label: 'Tin tức', icon: Newspaper },
   ];
 
   const isActive = (path: string) => {
@@ -30,7 +31,7 @@ export function Sidebar() {
   };
 
   return (
-    <nav className="hidden md:block w-48 bg-white border-r border-gray-200 min-h-screen sticky top-0 h-screen overflow-y-auto">
+    <nav className="hidden sm:block w-48 flex-shrink-0 bg-white border-r border-gray-200 min-h-screen sticky top-0 h-screen overflow-y-auto">
       <div className="p-4">
         <Link to="/" className="flex items-center gap-2 text-lg font-bold text-gray-800 mb-6">
           <BookOpen className="w-6 h-6 text-blue-600" />
