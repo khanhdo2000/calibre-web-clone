@@ -6,6 +6,9 @@ services:
   backend:
     # Override: Enable hot reload for development
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Override: Expose port for local development
+    ports:
+      - "8000:8000"
     # Override: Mount backend source code for hot reload
     volumes:
       - ./backend:/app

@@ -21,8 +21,9 @@ services:
       dockerfile: Dockerfile
     container_name: calibre-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # Ports are defined in override files:
+    # - docker-compose.dev.yml: 8000:8000 (local development)
+    # - Coolify/production: No ports (uses Caddy proxy)
     # Production-ready by default (no reload)
     # Use docker-compose.dev.yml to enable hot reload for local development
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
