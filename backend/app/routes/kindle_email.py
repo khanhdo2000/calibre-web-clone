@@ -72,12 +72,16 @@ async def send_to_kindle(
     try:
         book = await get_book_with_cloud_formats(request.book_id)
         if not book:
+            logger.warning(f"Book {request.book_id} not found in Calibre database")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Book not found"
             )
+        logger.info(f"Book {request.book_id} found with formats: {book.file_formats}")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error getting book {request.book_id}: {e}")
+        logger.error(f"Error getting book {request.book_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving book information"
