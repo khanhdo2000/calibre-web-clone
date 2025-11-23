@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { BookCard } from '../components/BookCard';
+import { categoryGroupsApi } from '@/services/api';
+import type { CategoryGroup, Book as BookType } from '@/types';
+import { FolderTree, ChevronRight } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -15,17 +19,28 @@ interface Book {
   file_formats: string[];
 }
 
+interface CategoryWithBooks {
+  category: CategoryGroup;
+  books: BookType[];
+}
+
 export function SelectBooksPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const deviceKey = searchParams.get('key');
 
   const [books, setBooks] = useState<Book[]>([]);
+  const [categoriesWithBooks, setCategoriesWithBooks] = useState<CategoryWithBooks[]>([]);
+  const [showCategories, setShowCategories] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [selectedBookIds, setSelectedBookIds] = useState<Set<number>>(new Set());
+  const [initialLoad, setInitialLoad] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sending, setSending] = useState(false);
+  const booksPerCategory = 12;
 
   useEffect(() => {
     if (!deviceKey) {
@@ -33,11 +48,68 @@ export function SelectBooksPage() {
       return;
     }
 
-    fetchBooks();
-  }, [deviceKey, navigate]);
+    if (initialLoad) {
+      // On initial load, show categories
+      loadCategoriesWithBooks();
+      setInitialLoad(false);
+    }
+  }, [deviceKey, navigate, initialLoad]);
+
+  const loadCategoriesWithBooks = async () => {
+    setLoading(true);
+    setError('');
+    setShowCategories(true);
+    try {
+      // Fetch all categories
+      const categoriesData = await categoryGroupsApi.getAll();
+      const categories = categoriesData.categories;
+
+      if (categories.length === 0) {
+        setCategoriesWithBooks([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch books for each category in parallel
+      const categoryBookPromises = categories
+        .filter(category => category.tags.length > 0)
+        .map(async (category) => {
+          try {
+            const result = await categoryGroupsApi.getBooks(category.id, {
+              page: 1,
+              per_page: booksPerCategory,
+              sort: 'new',
+            });
+
+            if (result.books.length > 0) {
+              return { category, books: result.books };
+            }
+            return null;
+          } catch (err) {
+            console.error(`Error loading books for category ${category.id}:`, err);
+            return null;
+          }
+        });
+
+      const results = await Promise.all(categoryBookPromises);
+      const categoriesWithBooksData: CategoryWithBooks[] = [];
+      results.forEach(result => {
+        if (result) {
+          categoriesWithBooksData.push(result);
+        }
+      });
+
+      setCategoriesWithBooks(categoriesWithBooksData);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Tải danh mục thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchBooks = async () => {
     setLoading(true);
+    setShowCategories(false);
     try {
       const params: any = {
         page: 1,
@@ -61,6 +133,16 @@ export function SelectBooksPage() {
       setError(searchQuery ? 'Tìm kiếm thất bại' : 'Tải sách thất bại');
       setLoading(false);
     }
+  };
+
+  const toggleCategory = (categoryId: number) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryId)) {
+      newExpanded.delete(categoryId);
+    } else {
+      newExpanded.add(categoryId);
+    }
+    setExpandedCategories(newExpanded);
   };
 
   const toggleBook = (bookId: number) => {
@@ -147,6 +229,18 @@ export function SelectBooksPage() {
               placeholder="Tìm sách hoặc tác giả..."
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  loadCategoriesWithBooks();
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Xóa
+              </button>
+            )}
             <button
               type="submit"
               disabled={loading}
@@ -164,43 +258,162 @@ export function SelectBooksPage() {
         </div>
       </div>
 
-      {/* Books Grid */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {books.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
-            {searchQuery ? 'Không tìm thấy sách phù hợp.' : 'Không có sách.'}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {books.map((book) => {
-              const isSelected = selectedBookIds.has(book.id);
-              return (
-                <div
-                  key={book.id}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggleBook(book.id);
-                  }}
-                  className={`relative cursor-pointer transition-all ${
-                    isSelected
-                      ? 'ring-4 ring-blue-500 ring-offset-2 scale-95'
-                      : 'hover:shadow-lg'
-                  }`}
-                  style={{ pointerEvents: 'auto' }}
-                >
-                  <div style={{ pointerEvents: 'none' }}>
-                    <BookCard book={book} />
-                  </div>
-                  {isSelected && (
-                    <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg">
-                      ✓
+      {/* Books Grid or Categories */}
+      <div className={showCategories ? "" : "max-w-7xl mx-auto px-4 py-6"}>
+        {showCategories ? (
+          // Category View - Edge to Edge Horizontal Scroll
+          categoriesWithBooks.length === 0 ? (
+            <div className="text-center text-gray-500 py-12 px-4">
+              Không có danh mục nào.
+            </div>
+          ) : (
+            <div className="space-y-8 md:space-y-12">
+              {categoriesWithBooks.map(({ category, books: categoryBooks }) => {
+                const isExpanded = expandedCategories.has(category.id);
+
+                return (
+                  <div key={category.id} className="md:bg-white md:rounded-lg md:shadow-sm md:border md:border-gray-200 md:p-6 md:mx-4">
+                    {/* Category Header */}
+                    <div className="flex items-center justify-between mb-4 px-4 md:px-0 md:mb-6">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <FolderTree className="hidden md:block w-6 h-6 text-blue-600" />
+                        <div>
+                          <h2 className="text-xl md:text-2xl font-bold text-gray-800">
+                            {category.name}
+                          </h2>
+                          {category.description && (
+                            <p className="text-gray-600 text-xs md:text-sm mt-1">
+                              {category.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleCategory(category.id)}
+                        className="flex items-center gap-1 md:gap-2 text-blue-600 hover:text-blue-700 font-medium transition-colors text-sm md:text-base whitespace-nowrap"
+                      >
+                        <span className="hidden sm:inline">
+                          {isExpanded ? 'Thu gọn' : `Xem tất cả (${categoryBooks.length})`}
+                        </span>
+                        <ChevronRight className={`w-4 h-4 md:w-5 md:h-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+
+                    {/* Books - Horizontal Scroll or Grid */}
+                    {isExpanded ? (
+                      // Expanded: Grid View
+                      <div className="px-4 md:px-0">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 md:gap-4">
+                          {categoryBooks.map((book) => {
+                            const isSelected = selectedBookIds.has(book.id);
+                            return (
+                              <div
+                                key={book.id}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleBook(book.id);
+                                }}
+                                className={`relative cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'ring-4 ring-blue-500 ring-offset-2 scale-95'
+                                    : 'hover:shadow-lg'
+                                }`}
+                                style={{ pointerEvents: 'auto' }}
+                              >
+                                <div style={{ pointerEvents: 'none' }}>
+                                  <BookCard book={book} />
+                                </div>
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg">
+                                    ✓
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      // Collapsed: Horizontal Scroll
+                      <div className="relative md:-mx-2">
+                        <div className="overflow-x-auto scrollbar-hide pb-2">
+                          <div className="flex gap-3 pl-4 md:gap-4 md:px-2" style={{ width: 'max-content' }}>
+                            {categoryBooks.map((book) => {
+                              const isSelected = selectedBookIds.has(book.id);
+                              return (
+                                <div
+                                  key={book.id}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleBook(book.id);
+                                  }}
+                                  className={`w-32 md:w-40 flex-shrink-0 relative cursor-pointer transition-all ${
+                                    isSelected
+                                      ? 'ring-4 ring-blue-500 ring-offset-2 scale-95'
+                                      : 'hover:shadow-lg'
+                                  }`}
+                                  style={{ pointerEvents: 'auto' }}
+                                >
+                                  <div style={{ pointerEvents: 'none' }}>
+                                    <BookCard book={book} />
+                                  </div>
+                                  {isSelected && (
+                                    <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg">
+                                      ✓
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          // Search Results View (original grid)
+          books.length === 0 ? (
+            <div className="text-center text-gray-500 py-12">
+              {searchQuery ? 'Không tìm thấy sách phù hợp.' : 'Không có sách.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {books.map((book) => {
+                const isSelected = selectedBookIds.has(book.id);
+                return (
+                  <div
+                    key={book.id}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleBook(book.id);
+                    }}
+                    className={`relative cursor-pointer transition-all ${
+                      isSelected
+                        ? 'ring-4 ring-blue-500 ring-offset-2 scale-95'
+                        : 'hover:shadow-lg'
+                    }`}
+                    style={{ pointerEvents: 'auto' }}
+                  >
+                    <div style={{ pointerEvents: 'none' }}>
+                      <BookCard book={book} />
+                    </div>
+                    {isSelected && (
+                      <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg">
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
       </div>
 

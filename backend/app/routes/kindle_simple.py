@@ -257,6 +257,9 @@ async def kindle_page(request: Request, key: str = None):
 
     <div class="section">
         <h2 style="margin-bottom: 10px; font-size: 18px;">Sách đã chọn <span id="bookCount"></span></h2>
+        <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 11px; color: #166534;">
+            ✓ Tự động chọn định dạng tốt nhất cho thiết bị của bạn
+        </div>
         <div id="booksList" class="loading">
             Chưa chọn sách nào.<br>
             Chọn sách từ thiết bị đã ghép nối để tải về đây.
@@ -325,20 +328,40 @@ async def kindle_page(request: Request, key: str = None):
             return names.join(', ');
         }}
 
+        // Detect if this is a Kindle browser
+        function isKindle() {{
+            var ua = navigator.userAgent.toLowerCase();
+            return ua.indexOf('kindle') !== -1 || ua.indexOf('silk') !== -1;
+        }}
+
         function getDownloadUrl(bookId, formats) {{
-            var preferred = ['MOBI', 'AZW3', 'AZW', 'EPUB', 'PDF'];
             var format = null;
-            for (var i = 0; i < preferred.length; i++) {{
-                if (formats.indexOf(preferred[i]) !== -1) {{
-                    format = preferred[i];
-                    break;
+
+            if (isKindle()) {{
+                // Kindle browser only supports MOBI, PRC, AZW, and AZW3
+                var preferred = ['MOBI', 'PRC', 'AZW3', 'AZW'];
+                for (var i = 0; i < preferred.length; i++) {{
+                    if (formats.indexOf(preferred[i]) !== -1) {{
+                        format = preferred[i];
+                        break;
+                    }}
+                }}
+            }} else {{
+                // Non-Kindle browsers: prefer EPUB, then MOBI/PRC
+                var preferred = ['EPUB', 'MOBI', 'PRC', 'AZW3', 'AZW', 'PDF'];
+                for (var i = 0; i < preferred.length; i++) {{
+                    if (formats.indexOf(preferred[i]) !== -1) {{
+                        format = preferred[i];
+                        break;
+                    }}
                 }}
             }}
-            if (!format && formats.length > 0) {{
-                format = formats[0];
-            }}
+
             if (!format) return null;
-            return API_BASE + '/files/book/' + bookId + '/' + format.toLowerCase();
+            return {{
+                url: API_BASE + '/files/book/' + bookId + '/' + format.toLowerCase(),
+                format: format
+            }};
         }}
 
         // Compatible HTTP request function (works with older browsers)
@@ -431,22 +454,37 @@ async def kindle_page(request: Request, key: str = None):
                     listEl.className = 'books-list';
 
                     var html = '';
+                    var supportedBooks = [];
+
+                    // Filter books to only show those with supported formats
                     for (var i = 0; i < books.length; i++) {{
                         var book = books[i];
-                        var downloadUrl = getDownloadUrl(book.id, book.file_formats);
-                        var downloadBtn = downloadUrl ?
-                            '<a href="' + downloadUrl + '" class="download-btn" download>Tải về</a>' : '';
-
-                        html += '<div class="book-item">' +
-                            downloadBtn +
-                            '<div class="book-info">' +
-                            '<div class="book-title">' + (book.title || 'Untitled') + '</div>' +
-                            '<div class="book-author">' + formatAuthors(book.authors) + '</div>' +
-                            '<div class="book-formats">Định dạng: ' + (book.file_formats ? book.file_formats.join(', ') : 'N/A') + '</div>' +
-                            '</div>' +
-                            '</div>';
+                        var downloadInfo = getDownloadUrl(book.id, book.file_formats);
+                        if (downloadInfo) {{
+                            supportedBooks.push({{book: book, downloadInfo: downloadInfo}});
+                        }}
                     }}
-                    listEl.innerHTML = html;
+
+                    if (supportedBooks.length === 0) {{
+                        listEl.className = 'loading';
+                        listEl.innerHTML = 'Không có sách tương thích.<br>Vui lòng chọn sách khác.';
+                    }} else {{
+                        for (var i = 0; i < supportedBooks.length; i++) {{
+                            var item = supportedBooks[i];
+                            var book = item.book;
+                            var downloadInfo = item.downloadInfo;
+
+                            html += '<div class="book-item">' +
+                                '<a href="' + downloadInfo.url + '" class="download-btn" download>Tải về</a>' +
+                                '<div class="book-info">' +
+                                '<div class="book-title">' + (book.title || 'Untitled') + '</div>' +
+                                '<div class="book-author">' + formatAuthors(book.authors) + '</div>' +
+                                '<div class="book-formats">Định dạng: ' + downloadInfo.format + '</div>' +
+                                '</div>' +
+                                '</div>';
+                        }}
+                        listEl.innerHTML = html;
+                    }}
                 }}
             }});
         }}

@@ -594,8 +594,13 @@ class CalibreDatabase:
         finally:
             session.close()
 
-    def get_books_by_ids(self, book_ids: List[int]) -> List[Book]:
-        """Get multiple books by their IDs"""
+    def get_books_by_ids(self, book_ids: List[int], cloud_formats_map: dict = None) -> List[Book]:
+        """Get multiple books by their IDs
+
+        Args:
+            book_ids: List of book IDs to fetch
+            cloud_formats_map: Optional dict mapping book_id -> list of cloud format strings
+        """
         if not self.Session:
             raise FileNotFoundError(f"Calibre database not found at {self.db_path}")
 
@@ -621,10 +626,17 @@ class CalibreDatabase:
                 if book_orm.publishers_rel:
                     publisher = Publisher(id=book_orm.publishers_rel.id, name=book_orm.publishers_rel.name)
 
-                # Get file formats
+                # Get file formats from Calibre DB
                 from app.services.calibre_db_models import Data
                 formats = session.query(Data.format, Data.name).filter(Data.book == book_orm.id).all()
                 file_formats = [f.format.upper() for f in formats]
+
+                # Add cloud-stored formats if provided
+                if cloud_formats_map and book_orm.id in cloud_formats_map:
+                    for cloud_format in cloud_formats_map[book_orm.id]:
+                        format_upper = cloud_format.upper()
+                        if format_upper not in file_formats:
+                            file_formats.append(format_upper)
 
                 # Create Book model
                 book = Book(
@@ -657,5 +669,26 @@ calibre_db = CalibreDatabase()
 
 # Helper function for API routes
 async def get_books_by_ids(book_ids: List[int]) -> List[Book]:
-    """Async wrapper for getting books by IDs"""
-    return calibre_db.get_books_by_ids(book_ids)
+    """Async wrapper for getting books by IDs with cloud format support"""
+    from app.database import async_session_maker
+    from app.models.upload_tracking import UploadTracking
+    from sqlalchemy import select
+
+    # Fetch cloud formats for all book IDs
+    cloud_formats_map = {}
+    async with async_session_maker() as db_session:
+        result = await db_session.execute(
+            select(UploadTracking.book_id, UploadTracking.file_type).filter(
+                UploadTracking.book_id.in_(book_ids),
+                UploadTracking.file_type != 'cover'
+            )
+        )
+        cloud_formats = result.all()
+
+        # Build map of book_id -> [format1, format2, ...]
+        for book_id, file_type in cloud_formats:
+            if book_id not in cloud_formats_map:
+                cloud_formats_map[book_id] = []
+            cloud_formats_map[book_id].append(file_type)
+
+    return calibre_db.get_books_by_ids(book_ids, cloud_formats_map)

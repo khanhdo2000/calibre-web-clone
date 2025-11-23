@@ -32,6 +32,9 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
+import threading
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -46,8 +49,11 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from PIL import Image
 import io
+from tqdm import tqdm
 
 # Setup logging
 logging.basicConfig(
@@ -55,6 +61,21 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def create_http_session() -> requests.Session:
+    """Create HTTP session with retry logic and connection pooling"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=20, pool_connections=20)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
 
 class LocalCalibreDB:
@@ -73,27 +94,29 @@ class LocalCalibreDB:
         return conn
 
     def get_all_books(self) -> List[Dict]:
-        """Get all books with their file formats"""
+        """Get all books with their file formats - optimized with JOIN"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Get all books
-        books_query = "SELECT id, title, path, has_cover FROM books ORDER BY id"
-        books = cursor.execute(books_query).fetchall()
+        # Optimized: Single query with JOIN instead of N+1 queries
+        query = """
+            SELECT b.id, b.title, b.path, b.has_cover,
+                   GROUP_CONCAT(d.format, ',') as formats
+            FROM books b
+            LEFT JOIN data d ON b.id = d.book
+            GROUP BY b.id, b.title, b.path, b.has_cover
+            ORDER BY b.id
+        """
+        books = cursor.execute(query).fetchall()
 
         result = []
         for book in books:
-            book_id = book["id"]
-            # Get file formats
-            formats_query = """
-                SELECT format FROM data
-                WHERE book = ?
-            """
-            formats = cursor.execute(formats_query, (book_id,)).fetchall()
-            file_formats = [row["format"].upper() for row in formats]
+            # Parse GROUP_CONCAT results
+            formats_str = book["formats"]
+            file_formats = [fmt.upper() for fmt in formats_str.split(',')] if formats_str else []
 
             result.append({
-                "id": book_id,
+                "id": book["id"],
                 "title": book["title"],
                 "path": book["path"],
                 "has_cover": bool(book["has_cover"]),
@@ -201,7 +224,7 @@ class S3Uploader:
 
 
 class GoogleDriveUploader:
-    """Upload book files to Google Drive"""
+    """Upload book files to Google Drive - thread-safe with per-thread service instances"""
 
     def __init__(
         self,
@@ -213,7 +236,18 @@ class GoogleDriveUploader:
         self.folder_id = folder_id
         self.make_links_public = False  # apply to newly uploaded files
         self.make_existing_public = False  # apply to already-existing files
+        self._folder_cache = {}  # Cache folder IDs to avoid repeated API calls
+        self._cache_lock = threading.Lock()  # Thread-safe cache access
+
+        # Store credentials info for thread-local service creation
+        self.service_account_path = service_account_path
+        self.oauth_client_secrets_path = oauth_client_secrets_path
+        self.oauth_token_path = oauth_token_path
+        self._thread_local = threading.local()  # Thread-local storage for service instances
+
         scopes = ['https://www.googleapis.com/auth/drive.file']
+        self.scopes = scopes
+
         try:
             credentials = None
             if oauth_client_secrets_path:
@@ -254,17 +288,38 @@ class GoogleDriveUploader:
             else:
                 raise ValueError("Either oauth_client_secrets_path or service_account_path must be provided")
 
-            self.service = build('drive', 'v3', credentials=credentials)
+            # Store main credentials for initialization test
+            self.credentials = credentials
+
+            # Test the credentials by building a service
+            service = build('drive', 'v3', credentials=credentials)
             logger.info("Google Drive client initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Google Drive: {e}")
             raise
 
+    def _get_service(self):
+        """Get thread-local Google Drive service instance"""
+        if not hasattr(self._thread_local, 'service'):
+            # Create a new service instance for this thread
+            self._thread_local.service = build('drive', 'v3', credentials=self.credentials)
+        return self._thread_local.service
+
     def _get_or_create_folder(self, folder_name: str, parent_id: str) -> Optional[str]:
-        """Get folder ID if exists, or create it"""
+        """Get folder ID if exists, or create it - with caching"""
+        cache_key = f"{parent_id}:{folder_name}"
+
+        # Check cache first
+        with self._cache_lock:
+            if cache_key in self._folder_cache:
+                return self._folder_cache[cache_key]
+
         try:
-            query = f"'{parent_id}' in parents and name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            results = self.service.files().list(
+            service = self._get_service()
+            # Escape single quotes in folder name for Google Drive query
+            escaped_folder_name = folder_name.replace("'", "\\'")
+            query = f"'{parent_id}' in parents and name='{escaped_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            results = service.files().list(
                 q=query,
                 spaces='drive',
                 fields='files(id, name)',
@@ -273,7 +328,10 @@ class GoogleDriveUploader:
 
             files = results.get('files', [])
             if files:
-                return files[0]['id']
+                folder_id = files[0]['id']
+                with self._cache_lock:
+                    self._folder_cache[cache_key] = folder_id
+                return folder_id
 
             # Create folder
             folder_metadata = {
@@ -282,12 +340,15 @@ class GoogleDriveUploader:
                 'parents': [parent_id]
             }
 
-            folder = self.service.files().create(
+            folder = service.files().create(
                 body=folder_metadata,
                 fields='id'
             ).execute()
 
-            return folder.get('id')
+            folder_id = folder.get('id')
+            with self._cache_lock:
+                self._folder_cache[cache_key] = folder_id
+            return folder_id
 
         except Exception as e:
             logger.error(f"Error getting/creating folder {folder_name}: {e}")
@@ -330,8 +391,11 @@ class GoogleDriveUploader:
             filename = os.path.basename(file_path)
 
             # Check if file already exists
-            query = f"'{book_folder_id}' in parents and name='{filename}' and trashed=false"
-            results = self.service.files().list(
+            service = self._get_service()
+            # Escape single quotes in filename for Google Drive query
+            escaped_filename = filename.replace("'", "\\'")
+            query = f"'{book_folder_id}' in parents and name='{escaped_filename}' and trashed=false"
+            results = service.files().list(
                 q=query,
                 spaces='drive',
                 fields='files(id, name)',
@@ -345,7 +409,7 @@ class GoogleDriveUploader:
                 logger.info(f"File already exists in GDrive: {filename}")
                 if self.make_existing_public and file_id:
                     try:
-                        self.service.permissions().create(
+                        service.permissions().create(
                             fileId=file_id,
                             body={'type': 'anyone', 'role': 'reader'},
                             fields='id'
@@ -379,7 +443,7 @@ class GoogleDriveUploader:
                 resumable=True
             )
 
-            file = self.service.files().create(
+            file = service.files().create(
                 body=file_metadata,
                 media_body=media,
                 fields='id'
@@ -389,7 +453,7 @@ class GoogleDriveUploader:
             # Optionally make link public (anyone with the link can view)
             if self.make_links_public and file_id:
                 try:
-                    self.service.permissions().create(
+                    service.permissions().create(
                         fileId=file_id,
                         body={'type': 'anyone', 'role': 'reader'},
                         fields='id'
@@ -407,55 +471,78 @@ class GoogleDriveUploader:
 
 
 class UploadTracker:
-    """Sync upload tracking records to server"""
+    """Sync upload tracking records to server - thread-safe with auto-sync"""
 
-    def __init__(self, server_api_url: str, api_key: Optional[str] = None):
+    def __init__(self, server_api_url: str, api_key: Optional[str] = None, auto_sync_threshold: int = 100):
         self.server_api_url = server_api_url.rstrip('/')
         self.api_key = api_key
         self.records = []
+        self._records_lock = threading.Lock()  # Thread-safe record management
+        self.auto_sync_threshold = auto_sync_threshold  # Auto-sync after N records
 
     def add_record(self, book_id: int, book_path: str, file_type: str, storage_type: str,
                    storage_url: str, file_size: Optional[int] = None, checksum: Optional[str] = None):
-        """Add upload record to batch"""
-        self.records.append({
-            "book_id": book_id,
-            "book_path": book_path,
-            "file_type": file_type,
-            "storage_type": storage_type,
-            "storage_url": storage_url,
-            "upload_date": datetime.utcnow().isoformat(),
-            "file_size": file_size,
-            "checksum": checksum,
-        })
+        """Add upload record to batch - thread-safe with auto-sync"""
+        with self._records_lock:
+            self.records.append({
+                "book_id": book_id,
+                "book_path": book_path,
+                "file_type": file_type,
+                "storage_type": storage_type,
+                "storage_url": storage_url,
+                "upload_date": datetime.utcnow().isoformat(),
+                "file_size": file_size,
+                "checksum": checksum,
+            })
 
-    def sync_to_server(self, batch_size: int = 100):
-        """Sync records to server in batches"""
+            # Auto-sync if threshold reached
+            if len(self.records) >= self.auto_sync_threshold:
+                logger.info(f"Auto-sync threshold reached ({self.auto_sync_threshold} records), syncing...")
+                self._sync_batch()
+
+    def _sync_batch(self):
+        """Internal method to sync current records - must be called with lock held"""
         if not self.records:
-            logger.info("No records to sync")
             return
 
-        total = len(self.records)
-        logger.info(f"Syncing {total} upload tracking records to server...")
-
+        # Create HTTP session with retry logic
+        session = create_http_session()
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        for i in range(0, total, batch_size):
-            batch = self.records[i:i + batch_size]
+        # Sync in larger batches (500) for efficiency
+        batch_size = 500
+        records_to_sync = self.records[:]
+        self.records = []  # Clear immediately
+
+        for i in range(0, len(records_to_sync), batch_size):
+            batch = records_to_sync[i:i + batch_size]
             try:
-                response = requests.post(
+                response = session.post(
                     f"{self.server_api_url}/admin/upload-tracking/bulk",
                     json=batch,
                     headers=headers,
                     timeout=30
                 )
                 response.raise_for_status()
-                logger.info(f"Synced batch {i // batch_size + 1}: {len(batch)} records")
+                logger.info(f"Synced batch: {len(batch)} records")
             except Exception as e:
-                logger.error(f"Failed to sync batch {i // batch_size + 1}: {e}")
+                logger.error(f"Failed to sync batch: {e}")
+                # Re-add failed records
+                with self._records_lock:
+                    self.records.extend(batch)
 
-        self.records = []  # Clear after sync
+    def sync_to_server(self, batch_size: int = 500):
+        """Sync records to server in batches"""
+        with self._records_lock:
+            if not self.records:
+                logger.info("No records to sync")
+                return
+
+            total = len(self.records)
+            logger.info(f"Syncing {total} upload tracking records to server...")
+            self._sync_batch()
 
 
 def get_existing_uploads(server_api_url: str, api_key: Optional[str] = None) -> Dict[str, bool]:
@@ -465,20 +552,21 @@ def get_existing_uploads(server_api_url: str, api_key: Optional[str] = None) -> 
     Returns a dict with keys like 's3:123:cover' or 'gdrive:123:EPUB' mapping to True.
     """
     existing = {}
+    session = create_http_session()
     try:
         headers = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
         logger.info("Checking existing uploads from server...")
-        
+
         # Fetch upload tracking records with pagination
         limit = 1000  # Fetch in batches of 1000
         offset = 0
         total_fetched = 0
-        
+
         while True:
-            response = requests.get(
+            response = session.get(
                 f"{server_api_url}/admin/upload-tracking",
                 headers=headers,
                 params={"limit": limit, "offset": offset},
@@ -530,6 +618,7 @@ def check_batch_uploads(
     More efficient than fetching all records when you only need to check specific files.
     """
     existing = {}
+    session = create_http_session()
     try:
         headers = {"Content-Type": "application/json"}
         if api_key:
@@ -538,8 +627,8 @@ def check_batch_uploads(
         # Check in batches
         for i in range(0, len(items_to_check), batch_size):
             batch = items_to_check[i:i + batch_size]
-            
-            response = requests.post(
+
+            response = session.post(
                 f"{server_api_url}/admin/upload-tracking/check",
                 json=batch,
                 headers=headers,
@@ -564,6 +653,189 @@ def check_batch_uploads(
         return existing
 
 
+def upload_cover_task(book: Dict, args, s3_uploader: S3Uploader, upload_tracker: Optional[UploadTracker],
+                      existing_uploads: Dict[str, bool], library_path: str, min_size_bytes: int) -> Dict:
+    """Task function for parallel cover upload"""
+    result = {"success": False, "book_id": book["id"], "covers_uploaded": 0}
+
+    if not book["has_cover"]:
+        return result
+
+    book_id = book["id"]
+    cover_key = f"s3:{book_id}:cover"
+    thumb_key_check = f"s3:{book_id}:cover_thumb"
+
+    # Skip if both cover and thumbnail are already uploaded
+    if cover_key in existing_uploads and thumb_key_check in existing_uploads:
+        return result
+
+    cover_path = os.path.join(library_path, book["path"], "cover.jpg")
+    if not os.path.exists(cover_path):
+        logger.warning(f"Cover file not found: {cover_path}")
+        return result
+
+    if args.dry_run:
+        result["covers_uploaded"] = 1
+        result["success"] = True
+        return result
+
+    # Upload cover
+    s3_key = s3_uploader.upload_cover(book_id, cover_path)
+    if s3_key:
+        file_size = os.path.getsize(cover_path)
+
+        if upload_tracker:
+            checksum = s3_uploader.get_file_checksum(cover_path) if args.calculate_checksums else None
+            upload_tracker.add_record(
+                book_id=book_id,
+                book_path=book["path"],
+                file_type="cover",
+                storage_type="s3",
+                storage_url=s3_key,
+                file_size=file_size,
+                checksum=checksum,
+            )
+        result["covers_uploaded"] += 1
+
+        # Also upload thumbnail if not already uploaded
+        if thumb_key_check not in existing_uploads:
+            thumb_key = s3_uploader.upload_cover_thumbnail(book_id, cover_path)
+            if thumb_key and upload_tracker:
+                upload_tracker.add_record(
+                    book_id=book_id,
+                    book_path=book["path"],
+                    file_type="cover_thumb",
+                    storage_type="s3",
+                    storage_url=thumb_key,
+                    file_size=None,
+                    checksum=None,
+                )
+
+        # Delete local file if requested and meets size requirement
+        if args.delete_local and file_size >= min_size_bytes:
+            if not args.dry_run:
+                try:
+                    os.remove(cover_path)
+                    logger.info(f"Deleted local cover: {cover_path} ({file_size} bytes)")
+                except Exception as e:
+                    logger.error(f"Failed to delete local cover {cover_path}: {e}")
+
+        result["success"] = True
+
+    return result
+
+
+def upload_book_task(book: Dict, args, gdrive_uploader: GoogleDriveUploader, upload_tracker: Optional[UploadTracker],
+                     existing_uploads: Dict[str, bool], library_path: str, min_size_bytes: int) -> Dict:
+    """Task function for parallel book file upload"""
+    result = {"success": False, "book_id": book["id"], "files_uploaded": 0}
+
+    if not book["file_formats"]:
+        return result
+
+    book_id = book["id"]
+    # Deduplicate formats per book
+    unique_formats = []
+    for _fmt in book["file_formats"]:
+        fmt_upper = _fmt.upper()
+        if fmt_upper not in unique_formats:
+            unique_formats.append(fmt_upper)
+
+    for format_ext in unique_formats:
+        file_key = f"gdrive:{book_id}:{format_ext}"
+        if file_key in existing_uploads:
+            continue
+
+        file_path = os.path.join(
+            library_path,
+            book["path"],
+            f"{os.path.basename(book['path'])}.{format_ext.lower()}"
+        )
+
+        if os.path.exists(file_path):
+            if args.dry_run:
+                result["files_uploaded"] += 1
+                continue
+
+            gdrive_file_id = gdrive_uploader.upload_file(file_path, book["path"])
+            if gdrive_file_id:
+                file_size = os.path.getsize(file_path)
+
+                if upload_tracker:
+                    upload_tracker.add_record(
+                        book_id=book_id,
+                        book_path=book["path"],
+                        file_type=format_ext,
+                        storage_type="gdrive",
+                        storage_url=gdrive_file_id,
+                        file_size=file_size,
+                    )
+                result["files_uploaded"] += 1
+
+                # Delete local file if requested
+                if args.delete_local and file_size >= min_size_bytes:
+                    if not args.dry_run:
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Deleted local file: {file_path} ({file_size} bytes)")
+                        except Exception as e:
+                            logger.error(f"Failed to delete local file {file_path}: {e}")
+        else:
+            # Fallback: scan the book folder for any supported formats
+            book_dir = os.path.join(library_path, book["path"])
+            if not os.path.isdir(book_dir):
+                continue
+
+            supported_exts = {".epub", ".pdf", ".mobi", ".azw3"}
+            try:
+                candidates = [
+                    os.path.join(book_dir, name)
+                    for name in os.listdir(book_dir)
+                    if os.path.splitext(name)[1].lower() in supported_exts
+                ]
+            except Exception as e:
+                logger.error(f"Error listing directory {book_dir}: {e}")
+                continue
+
+            for found_path in candidates:
+                found_ext = os.path.splitext(found_path)[1].lower()
+                found_type = found_ext[1:].upper()
+                existing_key = f"gdrive:{book_id}:{found_type}"
+                if existing_key in existing_uploads:
+                    continue
+
+                if args.dry_run:
+                    result["files_uploaded"] += 1
+                    continue
+
+                gdrive_file_id = gdrive_uploader.upload_file(found_path, book["path"])
+                if gdrive_file_id:
+                    file_size = os.path.getsize(found_path)
+                    if upload_tracker:
+                        upload_tracker.add_record(
+                            book_id=book_id,
+                            book_path=book["path"],
+                            file_type=found_type,
+                            storage_type="gdrive",
+                            storage_url=gdrive_file_id,
+                            file_size=file_size,
+                        )
+                    result["files_uploaded"] += 1
+
+                    # Delete local file if requested
+                    if args.delete_local and file_size >= min_size_bytes:
+                        if not args.dry_run:
+                            try:
+                                os.remove(found_path)
+                                logger.info(f"Deleted local file: {found_path} ({file_size} bytes)")
+                            except Exception as e:
+                                logger.error(f"Failed to delete local file {found_path}: {e}")
+            break
+
+    result["success"] = True
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Upload Calibre library to cloud storage")
     parser.add_argument("--library-path", required=True, help="Path to local Calibre library")
@@ -575,13 +847,16 @@ def main():
     parser.add_argument("--delete-local", action="store_true", help="Delete local files after successful upload")
     parser.add_argument("--min-size", type=int, default=0, help="Minimum file size in bytes to delete (default: 0, deletes all)")
     parser.add_argument("--min-size-mb", type=float, help="Minimum file size in MB (alternative to --min-size)")
+    parser.add_argument("--calculate-checksums", action="store_true", help="Calculate MD5 checksums for uploaded files (slower but better tracking)")
+    parser.add_argument("--max-workers", type=int, help="Maximum number of parallel upload workers (default: auto-detect based on CPU)")
+    parser.add_argument("--no-progress", action="store_true", help="Disable progress bars")
     
     # S3 configuration
     parser.add_argument("--s3-bucket", help="S3 bucket name")
     parser.add_argument("--s3-prefix", default="covers/", help="S3 prefix for covers")
     parser.add_argument("--aws-access-key", help="AWS access key")
     parser.add_argument("--aws-secret-key", help="AWS secret key")
-    parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
+    parser.add_argument("--aws-region", default="ap-southeast-1", help="AWS region")
     
     # Google Drive configuration
     parser.add_argument("--gdrive-credentials", help="Path to Google Drive service account credentials JSON")
@@ -725,206 +1000,77 @@ def main():
     elif args.incremental:
         logger.warning("--incremental specified but --server-api-url not provided. Cannot check existing uploads.")
 
-    # Upload covers
+    # Determine max workers for parallel uploads
+    if args.max_workers:
+        max_workers = args.max_workers
+    else:
+        # Auto-detect: Use 2x CPU count for I/O-bound operations, capped at 10
+        # Conservative to avoid overwhelming Google Drive API and SSL connections
+        max_workers = min(10, (multiprocessing.cpu_count() or 1) * 2)
+
+    logger.info(f"Using {max_workers} parallel workers for uploads")
+
+    # Upload covers (PARALLEL)
     if (args.covers_only or args.all) and s3_uploader:
         logger.info("Uploading covers to S3...")
         covers_uploaded = 0
-        for book in books:
-            if not book["has_cover"]:
-                continue
 
-            book_id = book["id"]
-            cover_key = f"s3:{book_id}:cover"
-            thumb_key_check = f"s3:{book_id}:cover_thumb"
-            # Skip if both cover and thumbnail are already uploaded
-            if cover_key in existing_uploads and thumb_key_check in existing_uploads:
-                logger.debug(f"Skipping already uploaded cover and thumbnail: {book_id}")
-                continue
+        # Filter books that need cover uploads
+        books_to_upload = [book for book in books if book["has_cover"]]
 
-            cover_path = os.path.join(args.library_path, book["path"], "cover.jpg")
-            if not os.path.exists(cover_path):
-                logger.warning(f"Cover file not found: {cover_path}")
-                continue
+        # Use ThreadPoolExecutor for parallel uploads
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all upload tasks
+            futures = []
+            for book in books_to_upload:
+                future = executor.submit(
+                    upload_cover_task,
+                    book, args, s3_uploader, upload_tracker,
+                    existing_uploads, args.library_path, min_size_bytes
+                )
+                futures.append(future)
 
-            if args.dry_run:
-                logger.info(f"[DRY RUN] Would upload cover: {book_id}")
-                covers_uploaded += 1
-                continue
-
-            s3_key = s3_uploader.upload_cover(book_id, cover_path)
-            if s3_key:
-                file_size = os.path.getsize(cover_path)
-                
-                if upload_tracker:
-                    checksum = s3_uploader.get_file_checksum(cover_path)
-                    upload_tracker.add_record(
-                        book_id=book_id,
-                        book_path=book["path"],
-                        file_type="cover",
-                        storage_type="s3",
-                        storage_url=s3_key,
-                        file_size=file_size,
-                        checksum=checksum,
-                    )
-                covers_uploaded += 1
-                
-                # Also upload thumbnail if not already uploaded
-                if thumb_key_check not in existing_uploads:
-                    thumb_key = s3_uploader.upload_cover_thumbnail(book_id, cover_path)
-                    if thumb_key and upload_tracker:
-                        upload_tracker.add_record(
-                            book_id=book_id,
-                            book_path=book["path"],
-                            file_type="cover_thumb",
-                            storage_type="s3",
-                            storage_url=thumb_key,
-                            file_size=None,  # Thumbnail size is smaller, optional to track
-                            checksum=None,
-                        )
-                else:
-                    logger.debug(f"Thumbnail already uploaded for book {book_id}, skipping")
-
-                # Delete local file if requested and meets size requirement
-                if args.delete_local and file_size >= min_size_bytes:
-                    if args.dry_run:
-                        logger.info(f"[DRY RUN] Would delete local cover: {cover_path} ({file_size} bytes)")
-                    else:
-                        try:
-                            os.remove(cover_path)
-                            logger.info(f"Deleted local cover: {cover_path} ({file_size} bytes)")
-                        except Exception as e:
-                            logger.error(f"Failed to delete local cover {cover_path}: {e}")
-                elif args.delete_local and file_size < min_size_bytes:
-                    logger.debug(f"Skipping deletion of cover {cover_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
+            # Process results with progress bar
+            if args.no_progress:
+                for future in as_completed(futures):
+                    result = future.result()
+                    covers_uploaded += result.get("covers_uploaded", 0)
+            else:
+                for future in tqdm(as_completed(futures), total=len(futures), desc="Uploading covers", unit="book"):
+                    result = future.result()
+                    covers_uploaded += result.get("covers_uploaded", 0)
 
         logger.info(f"Uploaded {covers_uploaded} covers")
 
-    # Upload book files
+    # Upload book files (PARALLEL)
     if (args.books_only or args.all) and gdrive_uploader:
         logger.info("Uploading book files to Google Drive...")
         files_uploaded = 0
-        for book in books:
-            if not book["file_formats"]:
-                continue
 
-            book_id = book["id"]
-            # Deduplicate formats per book in processing loop as well
-            unique_formats = []
-            for _fmt in book["file_formats"]:
-                fmt_upper = _fmt.upper()
-                if fmt_upper not in unique_formats:
-                    unique_formats.append(fmt_upper)
-            for format_ext in unique_formats:
-                file_key = f"gdrive:{book_id}:{format_ext}"
-                if file_key in existing_uploads:
-                    logger.debug(f"Skipping already uploaded file: {book_id}.{format_ext}")
-                    continue
+        # Filter books that have files to upload
+        books_to_upload = [book for book in books if book["file_formats"]]
 
-                file_path = os.path.join(
-                    args.library_path,
-                    book["path"],
-                    f"{os.path.basename(book['path'])}.{format_ext.lower()}"
+        # Use ThreadPoolExecutor for parallel uploads
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all upload tasks
+            futures = []
+            for book in books_to_upload:
+                future = executor.submit(
+                    upload_book_task,
+                    book, args, gdrive_uploader, upload_tracker,
+                    existing_uploads, args.library_path, min_size_bytes
                 )
+                futures.append(future)
 
-                if os.path.exists(file_path):
-                    # Canonical file exists – upload it
-                    if args.dry_run:
-                        logger.info(f"[DRY RUN] Would upload file: {book_id}.{format_ext}")
-                        files_uploaded += 1
-                        continue
-
-                    gdrive_file_id = gdrive_uploader.upload_file(file_path, book["path"])
-                    if gdrive_file_id:
-                        file_size = os.path.getsize(file_path)
-
-                        if upload_tracker:
-                            upload_tracker.add_record(
-                                book_id=book_id,
-                                book_path=book["path"],
-                                file_type=format_ext,
-                                storage_type="gdrive",
-                                storage_url=gdrive_file_id,
-                                file_size=file_size,
-                            )
-                        files_uploaded += 1
-
-                        # Delete local file if requested and meets size requirement
-                        if args.delete_local and file_size >= min_size_bytes:
-                            if args.dry_run:
-                                logger.info(f"[DRY RUN] Would delete local file: {file_path} ({file_size} bytes)")
-                            else:
-                                try:
-                                    os.remove(file_path)
-                                    logger.info(f"Deleted local file: {file_path} ({file_size} bytes)")
-                                except Exception as e:
-                                    logger.error(f"Failed to delete local file {file_path}: {e}")
-                        elif args.delete_local and file_size < min_size_bytes:
-                            logger.debug(f"Skipping deletion of file {file_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
-                else:
-                    # Fallback: scan the book folder for any supported formats and upload all
-                    book_dir = os.path.join(args.library_path, book["path"])
-                    if not os.path.isdir(book_dir):
-                        logger.warning(f"Book directory not found: {book_dir}")
-                        continue
-
-                    supported_exts = {".epub", ".pdf", ".mobi", ".azw3"}
-                    try:
-                        candidates = [
-                            os.path.join(book_dir, name)
-                            for name in os.listdir(book_dir)
-                            if os.path.splitext(name)[1].lower() in supported_exts
-                        ]
-                    except Exception as e:
-                        logger.error(f"Error listing directory {book_dir}: {e}")
-                        continue
-
-                    if not candidates:
-                        logger.warning(f"File not found: {file_path}")
-                        continue
-
-                    # Upload all found formats (skip those present in existing_uploads if server check exists)
-                    for found_path in candidates:
-                        found_ext = os.path.splitext(found_path)[1].lower()
-                        found_type = found_ext[1:].upper()  # e.g., '.epub' -> 'EPUB'
-                        existing_key = f"gdrive:{book_id}:{found_type}"
-                        if existing_key in existing_uploads:
-                            logger.debug(f"Skipping already uploaded file (existing on server): {book_id}.{found_type}")
-                            continue
-
-                        if args.dry_run:
-                            logger.info(f"[DRY RUN] Would upload found file: {found_path}")
-                            files_uploaded += 1
-                            continue
-
-                        gdrive_file_id = gdrive_uploader.upload_file(found_path, book["path"])
-                        if gdrive_file_id:
-                            file_size = os.path.getsize(found_path)
-                            if upload_tracker:
-                                upload_tracker.add_record(
-                                    book_id=book_id,
-                                    book_path=book["path"],
-                                    file_type=found_type,
-                                    storage_type="gdrive",
-                                    storage_url=gdrive_file_id,
-                                    file_size=file_size,
-                                )
-                            files_uploaded += 1
-
-                            # Delete local file if requested and meets size requirement
-                            if args.delete_local and file_size >= min_size_bytes:
-                                if args.dry_run:
-                                    logger.info(f"[DRY RUN] Would delete local file: {found_path} ({file_size} bytes)")
-                                else:
-                                    try:
-                                        os.remove(found_path)
-                                        logger.info(f"Deleted local file: {found_path} ({file_size} bytes)")
-                                    except Exception as e:
-                                        logger.error(f"Failed to delete local file {found_path}: {e}")
-                            elif args.delete_local and file_size < min_size_bytes:
-                                logger.debug(f"Skipping deletion of file {found_path} ({file_size} bytes < {min_size_bytes} bytes minimum)")
-
-                    # Fallback handled all found formats once for this book; move to next book
-                    break
+            # Process results with progress bar
+            if args.no_progress:
+                for future in as_completed(futures):
+                    result = future.result()
+                    files_uploaded += result.get("files_uploaded", 0)
+            else:
+                for future in tqdm(as_completed(futures), total=len(futures), desc="Uploading books", unit="book"):
+                    result = future.result()
+                    files_uploaded += result.get("files_uploaded", 0)
 
         logger.info(f"Uploaded {files_uploaded} book files")
 
