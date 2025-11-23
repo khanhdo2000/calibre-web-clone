@@ -667,37 +667,7 @@ class CalibreDatabase:
 calibre_db = CalibreDatabase()
 
 
-# Helper functions for API routes
-async def get_book_with_cloud_formats(book_id: int) -> Optional[BookDetail]:
-    """Async wrapper for getting a book with cloud format support"""
-    from app.database import async_session_maker
-    from app.models.upload_tracking import UploadTracking
-    from sqlalchemy import select
-
-    # Get book from Calibre DB
-    book = calibre_db.get_book(book_id)
-    if not book:
-        return None
-
-    # Fetch cloud formats for this book
-    async with async_session_maker() as db_session:
-        result = await db_session.execute(
-            select(UploadTracking.file_type).filter(
-                UploadTracking.book_id == book_id,
-                UploadTracking.file_type != 'cover'
-            )
-        )
-        cloud_formats = [row[0] for row in result.all()]
-
-        # Add cloud formats to the book's file_formats list
-        for cloud_format in cloud_formats:
-            format_upper = cloud_format.upper()
-            if format_upper not in book.file_formats:
-                book.file_formats.append(format_upper)
-
-    return book
-
-
+# Helper function for API routes
 async def get_books_by_ids(book_ids: List[int]) -> List[Book]:
     """Async wrapper for getting books by IDs with cloud format support"""
     from app.database import async_session_maker

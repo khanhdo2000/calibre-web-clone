@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.user import User
 from app.routes.auth import get_current_user
 from app.services.email import email_service
-from app.services.calibre_db import get_book_with_cloud_formats
+from app.services.calibre_db import calibre_db
 from app.services.storage import storage_service
 from app.services.auth import auth_service
 from app.config import settings
@@ -68,9 +68,9 @@ async def send_to_kindle(
     if not email_service.is_kindle_email(kindle_email):
         logger.warning(f"Email {kindle_email} does not appear to be a Kindle email address")
 
-    # Get book information (with cloud-stored formats included)
+    # Get book information
     try:
-        book = await get_book_with_cloud_formats(request.book_id)
+        book = calibre_db.get_book(request.book_id)
         if not book:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
