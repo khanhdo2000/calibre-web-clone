@@ -76,11 +76,10 @@ services:
       # Production: /opt/calibre-library:/calibre-library:ro
       # Local dev: Override with docker-compose.dev.yml
       - ${CALIBRE_LIBRARY_PATH:-/opt/calibre-library}:/calibre-library:ro
-      # Google Drive credentials (if using)
-      - ./service-account.json:/credentials.json:ro
       # RSS-generated EPUBs storage
       - rss-epubs:/data/rss-epubs
       # Note: Source code mounting for hot reload is done in docker-compose.dev.yml
+      # Note: Google Drive credentials should be mounted in production using Coolify storage/secrets
     depends_on:
       redis:
         condition: service_healthy

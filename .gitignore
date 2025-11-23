@@ -25,6 +25,14 @@ dist/
 .env.local
 .env.*.local
 
+# Credentials (never commit these!)
+service-account.json
+credentials.json
+client_oauth_desktop.json
+token.json
+*.pem
+*.key
+
 # IDE
 .vscode/
 .idea/
