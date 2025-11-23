@@ -80,7 +80,7 @@ services:
       # Local dev: Override with docker-compose.dev.yml to use ./service-account.json
       - /root/service-account.json:/service-account.json:ro
       # RSS-generated EPUBs storage
-      - rss-epubs:/data/rss-epubs
+      - /root/rss-epubs:/data/rss-epubs
       # Note: Source code mounting for hot reload is done in docker-compose.dev.yml
     depends_on:
       redis:
