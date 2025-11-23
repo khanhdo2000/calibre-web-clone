@@ -14,8 +14,12 @@ services:
       - ./backend:/app
       # Override: Use local dev calibre library path
       - ${CALIBRE_LIBRARY_PATH:-./calibre-library}:/calibre-library:ro
+      # Override: Use local service-account.json and mount as /credentials.json
       - ./service-account.json:/credentials.json:ro
       - rss-epubs:/data/rss-epubs
+    # Override: Use /credentials.json path for local development
+    environment:
+      - GOOGLE_DRIVE_CREDENTIALS_PATH=/credentials.json
 
   frontend:
     build:
