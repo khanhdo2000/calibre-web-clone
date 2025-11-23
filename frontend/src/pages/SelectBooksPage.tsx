@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { BookCard } from '../components/BookCard';
 import { categoryGroupsApi } from '@/services/api';
@@ -25,7 +24,6 @@ interface CategoryWithBooks {
 }
 
 export function SelectBooksPage() {
-  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const deviceKey = searchParams.get('key');
