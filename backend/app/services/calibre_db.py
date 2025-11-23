@@ -677,10 +677,7 @@ async def get_book_with_cloud_formats(book_id: int) -> Optional[BookDetail]:
     # Get book from Calibre DB
     book = calibre_db.get_book(book_id)
     if not book:
-        logger.warning(f"Book {book_id} not found in Calibre database")
         return None
-
-    logger.debug(f"Book {book_id} found in Calibre DB with local formats: {book.file_formats}")
 
     # Fetch cloud formats for this book
     async with async_session_maker() as db_session:
@@ -691,7 +688,6 @@ async def get_book_with_cloud_formats(book_id: int) -> Optional[BookDetail]:
             )
         )
         cloud_formats = [row[0] for row in result.all()]
-        logger.debug(f"Book {book_id} cloud formats from upload_tracking: {cloud_formats}")
 
         # Add cloud formats to the book's file_formats list
         for cloud_format in cloud_formats:
@@ -699,7 +695,6 @@ async def get_book_with_cloud_formats(book_id: int) -> Optional[BookDetail]:
             if format_upper not in book.file_formats:
                 book.file_formats.append(format_upper)
 
-    logger.info(f"Book {book_id} total formats (local + cloud): {book.file_formats}")
     return book
 
 
