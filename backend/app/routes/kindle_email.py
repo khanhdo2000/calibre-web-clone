@@ -100,14 +100,12 @@ async def send_to_kindle(
     # Get book file path
     book_path = None
     temp_file = None
-
+    
     try:
         # Try to get file from local storage first
         book_path = storage_service.get_book_file_path(book.path, format_upper)
-        logger.debug(f"Checking local book path: {book_path}")
-
+        
         if not os.path.exists(book_path):
-            logger.debug(f"Book not found at local path, scanning directory")
             # Fallback: scan the book directory
             book_dir = os.path.join(settings.calibre_library_path, book.path)
             if os.path.isdir(book_dir):
@@ -119,11 +117,9 @@ async def send_to_kindle(
                 ]
                 if candidates:
                     book_path = candidates[0]
-                    logger.debug(f"Found book in directory scan: {book_path}")
 
         # If still not found, try to stream from Google Drive and save to temp file
         if not book_path or not os.path.exists(book_path):
-            logger.info(f"Book not in local storage, checking Google Drive for book {request.book_id}")
             # Check if file is in Google Drive
             from app.models.upload_tracking import UploadTracking
             result = await db.execute(
@@ -134,9 +130,8 @@ async def send_to_kindle(
                 )
             )
             upload_record = result.scalar_one_or_none()
-
+            
             if upload_record and upload_record.storage_url:
-                logger.info(f"Found Google Drive record for book {request.book_id}, file_id: {upload_record.storage_url}")
                 # Download from Google Drive to temp file
                 book_stream = storage_service.get_book_stream_from_gdrive_id(upload_record.storage_url)
                 if book_stream:
@@ -149,15 +144,12 @@ async def send_to_kindle(
                     temp_file.write(book_stream.read())
                     temp_file.close()
                     book_path = temp_file.name
-                    logger.info(f"Downloaded book from Google Drive to temp file: {book_path}")
                 else:
-                    logger.error(f"Failed to download book from Google Drive, file_id: {upload_record.storage_url}")
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail=f"Book file in format {format_upper} not found"
                     )
             else:
-                logger.warning(f"No Google Drive record found for book {request.book_id}, format {format_upper}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Book file in format {format_upper} not found"
