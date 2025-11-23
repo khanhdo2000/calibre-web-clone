@@ -3,7 +3,7 @@ from typing import Optional, List, Dict
 import logging
 
 from app.models.book import Book, BookDetail, BookListResponse, SearchResult
-from app.services.calibre_db import calibre_db
+from app.services.calibre_db import calibre_db, get_book_with_cloud_formats
 from app.services.cache import cache_service
 from app.config import settings
 from app.database import get_db
@@ -233,25 +233,10 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
             return BookDetail(**cached_data)
 
     try:
-        book = calibre_db.get_book(book_id)
+        # Get book with cloud-stored formats included
+        book = await get_book_with_cloud_formats(book_id)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
-
-        # Merge file formats from PostgreSQL upload_tracking (for files uploaded to cloud)
-        # This allows us to show formats that were uploaded before being removed from local Calibre
-        result = await db.execute(
-            select(UploadTracking.file_type).where(
-                and_(
-                    UploadTracking.book_id == book_id,
-                    UploadTracking.file_type.notin_(['cover', 'cover_thumb'])
-                )
-            ).distinct()
-        )
-        cloud_formats = [row[0].upper() for row in result.all()]
-
-        # Merge with existing formats from Calibre metadata (avoid duplicates)
-        all_formats = list(set(book.file_formats + cloud_formats))
-        book.file_formats = sorted(all_formats)  # Sort for consistent ordering
 
         # Get S3 cover URL if cover exists and is uploaded to S3
         # For detail page, use full-size covers (not thumbnails)
