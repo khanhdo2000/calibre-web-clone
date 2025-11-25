@@ -83,7 +83,7 @@ services:
       # Google Drive credentials (production uses /root/service-account.json)
       # Local dev: Override with docker-compose.dev.yml to use ./service-account.json
       # Note: This is commented out for dev - production should uncomment or use override
-      # - /root/service-account.json:/service-account.json:ro
+      - /root/service-account.json:/service-account.json:ro
       # RSS-generated EPUBs storage
       # Production uses bind mount: /root/rss-epubs:/data/rss-epubs
       # Dev uses named volume: rss-epubs:/data/rss-epubs (defined in dev override)
