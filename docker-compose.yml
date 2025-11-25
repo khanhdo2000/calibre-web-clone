@@ -70,6 +70,10 @@ services:
 
       # RSS to EPUB
       - RSS_EPUB_OUTPUT_DIR=${RSS_EPUB_OUTPUT_DIR}
+      - RSS_GENERATION_HOUR=${RSS_GENERATION_HOUR:-6}
+      - RSS_GENERATION_MINUTE=${RSS_GENERATION_MINUTE:-0}
+      # Set timezone to UTC+7 (Vietnam/Thailand)
+      - TZ=Asia/Ho_Chi_Minh
 
     volumes:
       # Mount Calibre library
@@ -78,9 +82,12 @@ services:
       - ${CALIBRE_LIBRARY_PATH:-/opt/calibre-library}:/calibre-library:ro
       # Google Drive credentials (production uses /root/service-account.json)
       # Local dev: Override with docker-compose.dev.yml to use ./service-account.json
-      - /root/service-account.json:/service-account.json:ro
+      # Note: This is commented out for dev - production should uncomment or use override
+      # - /root/service-account.json:/service-account.json:ro
       # RSS-generated EPUBs storage
-      - /root/rss-epubs:/data/rss-epubs
+      # Production uses bind mount: /root/rss-epubs:/data/rss-epubs
+      # Dev uses named volume: rss-epubs:/data/rss-epubs (defined in dev override)
+      - ${RSS_EPUBS_PATH:-/root/rss-epubs}:/data/rss-epubs
       # Note: Source code mounting for hot reload is done in docker-compose.dev.yml
     depends_on:
       redis:

@@ -358,8 +358,19 @@ async def kindle_page(request: Request, key: str = None):
             }}
 
             if (!format) return null;
+
+            // RSS books have negative IDs - use RSS download endpoint
+            if (bookId < 0) {{
+                var rssBookId = Math.abs(bookId);
+                return {{
+                    url: API_BASE + '/rss/books/' + rssBookId + '/download?format=' + format.toLowerCase(),
+                    format: format
+                }};
+            }}
+
+            // Regular books use the files download endpoint
             return {{
-                url: API_BASE + '/files/book/' + bookId + '/' + format.toLowerCase(),
+                url: API_BASE + '/files/download/' + bookId + '/' + format.toLowerCase(),
                 format: format
             }};
         }}

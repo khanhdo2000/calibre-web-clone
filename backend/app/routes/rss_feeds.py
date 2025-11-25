@@ -52,6 +52,8 @@ class RssGeneratedBookResponse(BaseModel):
     title: str
     filename: str
     file_size: Optional[int]
+    mobi_filename: Optional[str]
+    mobi_file_size: Optional[int]
     article_count: int
     generation_date: date
     calibre_book_id: Optional[int]
@@ -242,9 +244,10 @@ async def list_generated_books(
 @router.get("/books/{book_id}/download")
 async def download_book(
     book_id: int,
+    format: str = Query("epub", regex="^(epub|mobi)$"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Download a generated EPUB book"""
+    """Download a generated book in EPUB or MOBI format"""
     result = await db.execute(
         select(RssGeneratedBook).where(RssGeneratedBook.id == book_id)
     )
@@ -252,14 +255,22 @@ async def download_book(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    if not os.path.exists(book.file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
-    return FileResponse(
-        path=book.file_path,
-        filename=book.filename,
-        media_type="application/epub+zip"
-    )
+    if format == "mobi":
+        if not book.mobi_file_path or not os.path.exists(book.mobi_file_path):
+            raise HTTPException(status_code=404, detail="MOBI file not found")
+        return FileResponse(
+            path=book.mobi_file_path,
+            filename=book.mobi_filename,
+            media_type="application/x-mobipocket-ebook"
+        )
+    else:
+        if not os.path.exists(book.file_path):
+            raise HTTPException(status_code=404, detail="EPUB file not found on disk")
+        return FileResponse(
+            path=book.file_path,
+            filename=book.filename,
+            media_type="application/epub+zip"
+        )
 
 
 @router.delete("/books/{book_id}")
@@ -268,7 +279,7 @@ async def delete_book(
     delete_file: bool = True,
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a generated book record and optionally the file"""
+    """Delete a generated book record and optionally the files (EPUB and MOBI)"""
     result = await db.execute(
         select(RssGeneratedBook).where(RssGeneratedBook.id == book_id)
     )
@@ -276,13 +287,20 @@ async def delete_book(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Delete file if requested
-    if delete_file and os.path.exists(book.file_path):
-        try:
-            os.remove(book.file_path)
-        except OSError as e:
-            # Log but don't fail
-            pass
+    # Delete files if requested
+    if delete_file:
+        # Delete EPUB
+        if os.path.exists(book.file_path):
+            try:
+                os.remove(book.file_path)
+            except OSError:
+                pass
+        # Delete MOBI
+        if book.mobi_file_path and os.path.exists(book.mobi_file_path):
+            try:
+                os.remove(book.mobi_file_path)
+            except OSError:
+                pass
 
     await db.execute(delete(RssGeneratedBook).where(RssGeneratedBook.id == book_id))
     await db.commit()

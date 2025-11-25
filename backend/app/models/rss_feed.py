@@ -19,15 +19,19 @@ class RssFeed(Base):
 
 
 class RssGeneratedBook(Base):
-    """Track generated EPUB files from RSS feeds"""
+    """Track generated EPUB and MOBI files from RSS feeds"""
     __tablename__ = "rss_generated_books"
 
     id = Column(Integer, primary_key=True, index=True)
     feed_id = Column(Integer, nullable=False, index=True)  # Reference to RssFeed
     title = Column(String(500), nullable=False)  # Generated book title
-    filename = Column(String(500), nullable=False, unique=True)  # Local filename
+    filename = Column(String(500), nullable=False, unique=True)  # Local EPUB filename
     file_path = Column(String(1024), nullable=False)  # Full path to EPUB
-    file_size = Column(Integer, nullable=True)  # File size in bytes
+    file_size = Column(Integer, nullable=True)  # EPUB file size in bytes
+    # MOBI format fields
+    mobi_filename = Column(String(500), nullable=True)  # Local MOBI filename
+    mobi_file_path = Column(String(1024), nullable=True)  # Full path to MOBI
+    mobi_file_size = Column(Integer, nullable=True)  # MOBI file size in bytes
     article_count = Column(Integer, default=0)  # Number of articles included
     generation_date = Column(Date, nullable=False, index=True)  # Date of generation
     calibre_book_id = Column(Integer, nullable=True)  # ID if added to Calibre

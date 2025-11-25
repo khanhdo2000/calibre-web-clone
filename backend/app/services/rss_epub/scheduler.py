@@ -11,6 +11,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rss_feed import RssFeed, RssGeneratedBook
+from app.database import async_session_maker
 from .fetcher import RssFetcher
 from .generator import EpubGenerator
 
@@ -41,7 +42,7 @@ class RssScheduler:
         """
         trigger = CronTrigger(hour=hour, minute=minute)
         self.scheduler.add_job(
-            self._generate_all_feeds,
+            self._scheduled_generation_wrapper,
             trigger,
             id="rss_daily_generation",
             replace_existing=True
@@ -54,6 +55,19 @@ class RssScheduler:
         if self.scheduler.running:
             self.scheduler.shutdown()
             logger.info("RSS scheduler stopped")
+
+    async def _scheduled_generation_wrapper(self):
+        """
+        Wrapper for scheduled generation that creates its own database session.
+        This is needed because APScheduler can't inject dependencies.
+        """
+        async with async_session_maker() as db:
+            try:
+                await self._generate_all_feeds(db)
+            except Exception as e:
+                logger.error(f"Error in scheduled RSS generation: {e}")
+            finally:
+                await db.close()
 
     async def generate_now(self, db: AsyncSession) -> List[str]:
         """
@@ -100,6 +114,16 @@ class RssScheduler:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
 
+            # Convert to MOBI
+            mobi_path = self._convert_to_mobi(filepath)
+            mobi_filename = None
+            mobi_file_size = None
+
+            if mobi_path and os.path.exists(mobi_path):
+                mobi_filename = os.path.basename(mobi_path)
+                mobi_file_size = os.path.getsize(mobi_path)
+                logger.info(f"MOBI conversion successful: {mobi_filename}")
+
             # Delete existing record with same filename if exists
             await db.execute(
                 delete(RssGeneratedBook).where(RssGeneratedBook.filename == filename)
@@ -111,6 +135,9 @@ class RssScheduler:
                 filename=filename,
                 file_path=filepath,
                 file_size=file_size,
+                mobi_filename=mobi_filename,
+                mobi_file_path=mobi_path,
+                mobi_file_size=mobi_file_size,
                 article_count=len(articles),
                 generation_date=today
             )
@@ -122,7 +149,7 @@ class RssScheduler:
                 generated_book.calibre_book_id = calibre_id
 
             await db.commit()
-            logger.info(f"Generated and recorded: {filename}")
+            logger.info(f"Generated and recorded: {filename}" + (f" + {mobi_filename}" if mobi_filename else ""))
 
         return filepath
 
@@ -153,6 +180,44 @@ class RssScheduler:
 
         logger.info(f"Daily generation complete: {len(generated_files)} EPUBs created")
         return generated_files
+
+    def _convert_to_mobi(self, epub_path: str) -> Optional[str]:
+        """
+        Convert EPUB to MOBI using Calibre's ebook-convert.
+
+        Args:
+            epub_path: Path to EPUB file
+
+        Returns:
+            Path to generated MOBI file or None if conversion failed
+        """
+        try:
+            mobi_path = epub_path.replace('.epub', '.mobi')
+
+            logger.info(f"Converting {epub_path} to MOBI...")
+
+            cmd = ["ebook-convert", epub_path, mobi_path]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+
+            if result.returncode == 0 and os.path.exists(mobi_path):
+                logger.info(f"Successfully converted to MOBI: {mobi_path}")
+                return mobi_path
+            else:
+                logger.error(f"ebook-convert failed: {result.stderr}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            logger.error("ebook-convert timed out")
+        except Exception as e:
+            logger.error(f"Failed to convert to MOBI: {e}")
+
+        return None
 
     def _add_to_calibre(self, epub_path: str, category: Optional[str] = None) -> Optional[int]:
         """

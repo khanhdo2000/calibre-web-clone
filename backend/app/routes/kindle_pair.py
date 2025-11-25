@@ -141,6 +141,7 @@ async def select_books(request: SelectBooksRequest):
 async def check_selected_books(device_key: str):
     """
     Check which books have been selected (called from Kindle).
+    Handles both regular books (positive IDs) and RSS books (negative IDs).
     """
     session_data = await cache_service.get(f"kindle_pair:{device_key}")
     if not session_data:
@@ -148,12 +149,40 @@ async def check_selected_books(device_key: str):
 
     session = PairingSession.model_validate(session_data)
 
-    # Get book details for selected books
-    from app.services.calibre_db import get_books_by_ids
     books = []
 
     if session.selected_books:
-        books = await get_books_by_ids(session.selected_books)
+        # Separate regular books and RSS books
+        regular_book_ids = [bid for bid in session.selected_books if bid > 0]
+        rss_book_ids = [-bid for bid in session.selected_books if bid < 0]
+
+        # Get regular books from Calibre
+        if regular_book_ids:
+            from app.services.calibre_db import get_books_by_ids
+            books.extend(await get_books_by_ids(regular_book_ids))
+
+        # Get RSS books
+        if rss_book_ids:
+            from sqlalchemy import select
+            from app.database import async_session_maker
+            from app.models.rss_feed import RssGeneratedBook
+
+            async with async_session_maker() as db:
+                result = await db.execute(
+                    select(RssGeneratedBook).where(RssGeneratedBook.id.in_(rss_book_ids))
+                )
+                rss_books = result.scalars().all()
+
+                # Convert RSS books to the same format as regular books
+                for rss_book in rss_books:
+                    books.append({
+                        "id": -rss_book.id,  # Use negative ID to identify as RSS
+                        "title": rss_book.title,
+                        "authors": [{"name": "RSS Feed"}],
+                        "path": f"/api/rss/books/{rss_book.id}/download",
+                        "file_formats": ["MOBI" if rss_book.mobi_filename else "EPUB"],
+                        "is_rss": True
+                    })
 
     return {
         "device_key": device_key,

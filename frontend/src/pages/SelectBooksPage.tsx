@@ -4,7 +4,7 @@ import axios from 'axios';
 import { BookCard } from '../components/BookCard';
 import { categoryGroupsApi } from '@/services/api';
 import type { CategoryGroup, Book as BookType } from '@/types';
-import { FolderTree, ChevronRight } from 'lucide-react';
+import { FolderTree, ChevronRight, Newspaper } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -23,6 +23,18 @@ interface CategoryWithBooks {
   books: BookType[];
 }
 
+interface RssGeneratedBook {
+  id: number;
+  feed_id: number;
+  title: string;
+  filename: string;
+  file_size: number;
+  mobi_filename: string | null;
+  mobi_file_size: number | null;
+  article_count: number;
+  generation_date: string;
+}
+
 export function SelectBooksPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -30,6 +42,7 @@ export function SelectBooksPage() {
 
   const [books, setBooks] = useState<Book[]>([]);
   const [categoriesWithBooks, setCategoriesWithBooks] = useState<CategoryWithBooks[]>([]);
+  const [rssBooks, setRssBooks] = useState<RssGeneratedBook[]>([]);
   const [showCategories, setShowCategories] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [selectedBookIds, setSelectedBookIds] = useState<Set<number>>(new Set());
@@ -47,11 +60,24 @@ export function SelectBooksPage() {
     }
 
     if (initialLoad) {
-      // On initial load, show categories
+      // On initial load, show categories and load RSS books
       loadCategoriesWithBooks();
+      loadRssBooks();
       setInitialLoad(false);
     }
   }, [deviceKey, navigate, initialLoad]);
+
+  const loadRssBooks = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/rss/books`, {
+        params: { limit: 20 }
+      });
+      setRssBooks(response.data);
+    } catch (err) {
+      console.error('Error loading RSS books:', err);
+    }
+  };
+
 
   const loadCategoriesWithBooks = async () => {
     setLoading(true);
@@ -151,6 +177,12 @@ export function SelectBooksPage() {
       newSelected.add(bookId);
     }
     setSelectedBookIds(newSelected);
+  };
+
+  const toggleRssBook = (rssBookId: number) => {
+    // Use negative ID to distinguish RSS books from regular books
+    const bookId = -rssBookId;
+    toggleBook(bookId);
   };
 
   const sendToKindle = async () => {
@@ -260,13 +292,78 @@ export function SelectBooksPage() {
       <div className={showCategories ? "" : "max-w-7xl mx-auto px-4 py-6"}>
         {showCategories ? (
           // Category View - Edge to Edge Horizontal Scroll
-          categoriesWithBooks.length === 0 ? (
-            <div className="text-center text-gray-500 py-12 px-4">
-              Không có danh mục nào.
-            </div>
-          ) : (
-            <div className="space-y-8 md:space-y-12">
-              {categoriesWithBooks.map(({ category, books: categoryBooks }) => {
+          <div>
+            {/* RSS News Section */}
+            {rssBooks.length > 0 && (
+              <div className="md:bg-white md:rounded-lg md:shadow-sm md:border md:border-gray-200 md:p-6 md:mx-4 mb-8 md:mb-12">
+                <div className="flex items-center gap-3 mb-6 px-4 md:px-0">
+                  <Newspaper className="w-6 h-6 text-orange-600" />
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-800">
+                      Tin tức RSS
+                    </h2>
+                    <p className="text-gray-600 text-xs md:text-sm mt-1">
+                      Tự động tạo từ nguồn RSS
+                    </p>
+                  </div>
+                </div>
+
+                <div className="px-4 md:px-0">
+                  <div className="space-y-3">
+                    {rssBooks.map((book) => {
+                      const isSelected = selectedBookIds.has(-book.id);
+                      return (
+                        <div
+                          key={book.id}
+                          onClick={() => toggleRssBook(book.id)}
+                          className={`bg-gray-50 rounded-lg p-4 transition-all border-2 cursor-pointer relative ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-blue-600 border-blue-600'
+                                : 'border-gray-300'
+                            }`}>
+                              {isSelected && (
+                                <span className="text-white font-bold text-sm">✓</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-gray-900 truncate">
+                                {book.title}
+                              </h3>
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-gray-600">
+                                <span>{book.article_count} bài viết</span>
+                                <span className="text-gray-400">•</span>
+                                <span>{new Date(book.generation_date).toLocaleDateString('vi-VN')}</span>
+                                {book.mobi_filename && (
+                                  <>
+                                    <span className="text-gray-400">•</span>
+                                    <span className="text-green-600 font-medium">MOBI</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {categoriesWithBooks.length === 0 ? (
+              <div className="text-center text-gray-500 py-12 px-4">
+                Không có danh mục nào.
+              </div>
+            ) : (
+              <div className="space-y-8 md:space-y-12">
+                {categoriesWithBooks.map(({ category, books: categoryBooks }) => {
                 const isExpanded = expandedCategories.has(category.id);
 
                 return (
@@ -373,7 +470,8 @@ export function SelectBooksPage() {
                 );
               })}
             </div>
-          )
+            )}
+          </div>
         ) : (
           // Search Results View (original grid)
           books.length === 0 ? (
