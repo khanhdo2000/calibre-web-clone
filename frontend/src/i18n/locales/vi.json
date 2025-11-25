@@ -26,6 +26,7 @@
     "home": "Trang chủ",
     "books": "Sách",
     "discover": "Khám phá",
+    "favorites": "Yêu thích",
     "authors": "Tác giả",
     "publishers": "Nhà xuất bản",
     "tags": "Thẻ",
@@ -269,5 +270,18 @@
       "resendSuccess": "Nếu email tồn tại và chưa được xác minh, một email xác minh mới đã được gửi."
     },
     "logout": "Đăng xuất"
+  },
+  "favorites": {
+    "title": "Sách Yêu Thích",
+    "addToFavorites": "Thêm vào yêu thích",
+    "removeFromFavorites": "Xóa khỏi yêu thích",
+    "loginRequired": "Vui lòng đăng nhập để xem sách yêu thích",
+    "loginMessage": "Đăng nhập để lưu và xem các sách yêu thích của bạn",
+    "empty": "Chưa có sách yêu thích",
+    "emptyMessage": "Bắt đầu thêm sách vào danh sách yêu thích bằng cách nhấp vào biểu tượng trái tim trên bất kỳ cuốn sách nào",
+    "loading": "Đang tải sách yêu thích...",
+    "loadError": "Không thể tải sách yêu thích",
+    "bookCount": "{{count}} sách",
+    "bookCount_plural": "{{count}} sách"
   }
 }

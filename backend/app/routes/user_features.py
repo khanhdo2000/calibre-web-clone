@@ -7,7 +7,11 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.user import User, Favorite, ReadingProgress, ReadingList, ReadingListItem
+from app.models.book import Book
 from app.routes.auth import get_current_user
+from app.services.calibre_db import calibre_db
+from app.routes.books import get_cover_urls_map
+from app.config import settings
 
 router = APIRouter(prefix="/api/user", tags=["user-features"])
 
@@ -121,6 +125,63 @@ async def remove_favorite(
         )
     )
     await db.commit()
+
+
+@router.get("/favorites/books", response_model=List[Book])
+async def get_favorites_with_books(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get user's favorite books with full book data - optimized single call"""
+    # Get favorite book IDs
+    result = await db.execute(
+        select(Favorite.book_id)
+        .where(Favorite.user_id == current_user.id)
+        .order_by(Favorite.created_at.desc())
+    )
+    book_ids = [row[0] for row in result.all()]
+
+    if not book_ids:
+        return []
+
+    # Fetch all books at once
+    books = []
+    for book_id in book_ids:
+        try:
+            book = calibre_db.get_book(book_id)
+            if book:
+                books.append(book)
+        except Exception:
+            # Skip books that can't be loaded
+            continue
+
+    # Get S3 cover URLs for books that have covers
+    book_ids_with_covers = [book.id for book in books if book.has_cover]
+    if book_ids_with_covers and settings.s3_bucket_name:
+        # Get thumbnails for list view
+        thumb_urls_map = await get_cover_urls_map(
+            db,
+            book_ids_with_covers,
+            bucket=settings.s3_bucket_name,
+            region=settings.aws_region,
+            use_thumbnail=True
+        )
+        # Get full-size covers as fallback
+        full_size_urls_map = await get_cover_urls_map(
+            db,
+            book_ids_with_covers,
+            bucket=settings.s3_bucket_name,
+            region=settings.aws_region,
+            use_thumbnail=False
+        )
+
+        # Assign cover URLs to books
+        for book in books:
+            if book.has_cover:
+                book.cover_thumb_url = thumb_urls_map.get(book.id)
+                book.cover_url = full_size_urls_map.get(book.id)
+
+    return books
 
 
 # Reading Progress

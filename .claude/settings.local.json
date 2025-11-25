@@ -14,7 +14,9 @@
       "Bash(docker-compose restart:*)",
       "Bash(curl:*)",
       "Bash(python3:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

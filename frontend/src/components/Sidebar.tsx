@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { BookOpen, Users, Building2, FolderTree, Sparkles, Folders, Home, Newspaper } from 'lucide-react';
+import { BookOpen, Users, Building2, FolderTree, Sparkles, Folders, Home, Newspaper, Heart } from 'lucide-react';
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -10,6 +10,7 @@ export function Sidebar() {
     { path: '/', label: t('navigation.home'), icon: Home },
     { path: '/books', label: t('navigation.books'), icon: BookOpen },
     { path: '/discover', label: t('navigation.discover'), icon: Sparkles },
+    { path: '/favorites', label: t('navigation.favorites'), icon: Heart },
     { path: '/authors', label: t('navigation.authors'), icon: Users },
     { path: '/publishers', label: t('navigation.publishers'), icon: Building2 },
     { path: '/tags', label: t('navigation.tags'), icon: FolderTree },

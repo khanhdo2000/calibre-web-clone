@@ -26,6 +26,7 @@
     "home": "Home",
     "books": "Books",
     "discover": "Discover",
+    "favorites": "Favorites",
     "authors": "Authors",
     "publishers": "Publishers",
     "tags": "Tags",
@@ -269,5 +270,18 @@
       "resendSuccess": "If the email exists and is not verified, a new verification email has been sent."
     },
     "logout": "Logout"
+  },
+  "favorites": {
+    "title": "My Favorites",
+    "addToFavorites": "Add to favorites",
+    "removeFromFavorites": "Remove from favorites",
+    "loginRequired": "Please log in to view your favorites",
+    "loginMessage": "Sign in to save and view your favorite books",
+    "empty": "No favorites yet",
+    "emptyMessage": "Start adding books to your favorites by clicking the heart icon on any book",
+    "loading": "Loading your favorites...",
+    "loadError": "Failed to load favorite books",
+    "bookCount": "{{count}} book",
+    "bookCount_plural": "{{count}} books"
   }
 }

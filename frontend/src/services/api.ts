@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type {
+  Book,
   BookDetail,
   BookListResponse,
   SearchResult,
@@ -284,6 +285,34 @@ export const rssBooksApi = {
   generateFeed: async (feedId: number): Promise<{ success: boolean; files_generated: number; files: string[] }> => {
     const response = await api.post(`/rss/generate/${feedId}`);
     return response.data;
+  },
+};
+
+// Favorites API
+export interface Favorite {
+  id: number;
+  book_id: number;
+  created_at: string;
+}
+
+export const favoritesApi = {
+  getFavorites: async (): Promise<Favorite[]> => {
+    const response = await api.get('/user/favorites');
+    return response.data;
+  },
+
+  getFavoritesWithBooks: async (): Promise<Book[]> => {
+    const response = await api.get('/user/favorites/books');
+    return response.data;
+  },
+
+  addFavorite: async (bookId: number): Promise<Favorite> => {
+    const response = await api.post(`/user/favorites/${bookId}`);
+    return response.data;
+  },
+
+  removeFavorite: async (bookId: number): Promise<void> => {
+    await api.delete(`/user/favorites/${bookId}`);
   },
 };
 

@@ -3,6 +3,7 @@ import { Book } from '@/types';
 import { booksApi } from '@/services/api';
 import { BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { FavoriteButton } from './FavoriteButton';
 
 interface BookCardProps {
   book: Book;
@@ -14,7 +15,7 @@ export function BookCard({ book }: BookCardProps) {
   const coverUrl = book.cover_thumb_url || book.cover_url || (book.has_cover ? booksApi.getCoverUrl(book.id) : null);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col group">
       <Link to={`/book/${book.id}`}>
         <div className="aspect-[2/3] bg-gray-200 relative overflow-hidden rounded mb-2 md:mb-3">
           {coverUrl ? (
@@ -29,6 +30,10 @@ export function BookCard({ book }: BookCardProps) {
               <BookOpen className="w-12 h-12 md:w-16 md:h-16 text-gray-400" />
             </div>
           )}
+          {/* Always visible on mobile, hover-visible on desktop */}
+          <div className="absolute top-1 right-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+            <FavoriteButton bookId={book.id} size="sm" className="bg-white/90 backdrop-blur-sm rounded-full shadow-lg" />
+          </div>
         </div>
       </Link>
 

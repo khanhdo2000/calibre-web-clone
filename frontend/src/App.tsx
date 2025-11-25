@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { FavoritesProvider } from './contexts/FavoritesContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { HomePage } from './pages/HomePage';
@@ -20,6 +21,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { RssBooksPage } from './pages/RssBooksPage';
+import { FavoritesPage } from './pages/FavoritesPage';
 
 function MainLayout() {
   const location = useLocation();
@@ -54,6 +56,7 @@ function MainLayout() {
             <Route path="/categories/manage" element={<CategoriesManagementPage />} />
             <Route path="/categories/:id" element={<CategoryViewPage />} />
             <Route path="/news" element={<RssBooksPage />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
           </Routes>
         </main>
       </div>
@@ -64,17 +67,19 @@ function MainLayout() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/read/:id" element={<ReaderPage />} />
-          <Route path="/pair" element={<PairPage />} />
-          <Route path="/select-books" element={<SelectBooksPage />} />
-          <Route path="/*" element={<MainLayout />} />
-        </Routes>
-      </BrowserRouter>
+      <FavoritesProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/read/:id" element={<ReaderPage />} />
+            <Route path="/pair" element={<PairPage />} />
+            <Route path="/select-books" element={<SelectBooksPage />} />
+            <Route path="/*" element={<MainLayout />} />
+          </Routes>
+        </BrowserRouter>
+      </FavoritesProvider>
     </AuthProvider>
   );
 }

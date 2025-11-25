@@ -5,6 +5,7 @@ import { booksApi, kindleEmailApi } from '@/services/api';
 import { BookOpen, Download, Calendar, Tag, User, BookMarked, Mail, CheckCircle, AlertCircle, Settings, Info } from 'lucide-react';
 import type { BookDetail } from '@/types';
 import { KindleEmailModal } from '@/components/KindleEmailModal';
+import { FavoriteButton } from '@/components/FavoriteButton';
 
 export function BookDetailPage() {
   const { t } = useTranslation();
@@ -223,6 +224,14 @@ export function BookDetailPage() {
                   {t('book.detail.download', { format })}
                 </a>
               ))}
+
+              {/* Favorite Button */}
+              <FavoriteButton
+                bookId={book.id}
+                size="md"
+                showLabel={true}
+                className="w-full border-2 border-gray-300 hover:border-red-400 rounded-lg bg-white"
+              />
             </div>
           </div>
 
