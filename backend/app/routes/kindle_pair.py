@@ -64,7 +64,7 @@ async def create_pairing_session():
 
 
 @router.get("/qr-code/{device_key}")
-async def get_qr_code(device_key: str):
+async def get_qr_code(device_key: str, fmt: str | None = None):
     """
     Generate QR code for the pairing URL.
     """
@@ -78,7 +78,7 @@ async def get_qr_code(device_key: str):
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
+        box_size=15,
         border=4,
     )
     qr.add_data(pair_url)
@@ -86,12 +86,21 @@ async def get_qr_code(device_key: str):
 
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Convert to bytes
+    # Kindle Paperwhite 3 struggles with PNG rendering.
+    # Default to GIF for compatibility but keep PNG as opt-in (?fmt=png).
+    image_format = "PNG" if (fmt and fmt.lower() == "png") else "GIF"
+    media_type = "image/png" if image_format == "PNG" else "image/gif"
+
+    if image_format == "GIF":
+        img = img.convert("P")
+    else:
+        img = img.convert("RGB")
+
     img_bytes = io.BytesIO()
-    img.save(img_bytes, format='PNG')
+    img.save(img_bytes, format=image_format)
     img_bytes.seek(0)
 
-    return Response(content=img_bytes.getvalue(), media_type="image/png")
+    return Response(content=img_bytes.getvalue(), media_type=media_type)
 
 
 @router.post("/connect")

@@ -70,9 +70,24 @@ export function SelectBooksPage() {
   const loadRssBooks = async () => {
     try {
       const response = await axios.get(`${API_URL}/rss/books`, {
-        params: { limit: 20 }
+        params: { limit: 100 } // Fetch more to ensure we get all feeds
       });
-      setRssBooks(response.data);
+
+      // Group by feed_id and keep only the latest book from each feed
+      const booksByFeed = new Map<number, RssGeneratedBook>();
+
+      response.data.forEach((book: RssGeneratedBook) => {
+        const existing = booksByFeed.get(book.feed_id);
+        if (!existing || new Date(book.generation_date) > new Date(existing.generation_date)) {
+          booksByFeed.set(book.feed_id, book);
+        }
+      });
+
+      // Convert map to array and sort by generation date (newest first)
+      const latestBooks = Array.from(booksByFeed.values())
+        .sort((a, b) => new Date(b.generation_date).getTime() - new Date(a.generation_date).getTime());
+
+      setRssBooks(latestBooks);
     } catch (err) {
       console.error('Error loading RSS books:', err);
     }
