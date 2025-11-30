@@ -257,7 +257,7 @@ async def kindle_page(request: Request, key: str = None):
         <div style="overflow: hidden;">
             <div style="float: right; text-align: center; margin-left: 15px;">
                 <div style="color: #666; font-size: 11px; margin-bottom: 3px;">Quét QR:</div>
-                <img src="{qr_code_url}" alt="QR Code" width="180" height="180" style="border: 2px solid #ddd; border-radius: 4px; max-width: 75vw; height: auto;">
+                <img src="{qr_code_url}" alt="QR Code" style="width: 180px; max-width: 75vw; border: 2px solid #000;">
             </div>
             <div style="overflow: hidden;">
                 <h2 style="margin: 0 0 8px 0; font-size: 18px;">Ghép nối thiết bị</h2>
