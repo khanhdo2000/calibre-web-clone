@@ -107,7 +107,9 @@ async def kindle_page(request: Request, key: str = None):
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3003")
 
     # Use the request's scheme (http or https) for API URLs
-    scheme = request.url.scheme
+    # Check X-Forwarded-Proto header first (set by reverse proxy like Caddy/Nginx)
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    scheme = forwarded_proto if forwarded_proto else request.url.scheme
     host = request.url.netloc
     api_base = f"{scheme}://{host}"
 
