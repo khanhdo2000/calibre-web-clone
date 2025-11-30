@@ -76,31 +76,28 @@ async def get_qr_code(device_key: str, fmt: str | None = None):
     # Generate QR code
     pair_url = f"{get_base_url()}/pair?key={device_key}"
     qr = qrcode.QRCode(
-        version=1,  # Smallest version - auto-upgrades if data doesn't fit
-        error_correction=qrcode.constants.ERROR_CORRECT_L,  # Lowest error correction for simpler code
-        box_size=10,  # Reduced from 15 - smaller boxes = smaller image
-        border=2,  # Reduced from 4 - thinner border
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=15,
+        border=4,
     )
     qr.add_data(pair_url)
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Kindle Paperwhite 3 and older models struggle with PNG rendering.
-    # Default to GIF for maximum compatibility but keep PNG as opt-in (?fmt=png).
+    # Kindle Paperwhite 3 struggles with PNG rendering.
+    # Default to GIF for compatibility but keep PNG as opt-in (?fmt=png).
     image_format = "PNG" if (fmt and fmt.lower() == "png") else "GIF"
     media_type = "image/png" if image_format == "PNG" else "image/gif"
 
     if image_format == "GIF":
-        # Convert to palette mode (256 colors) for GIF
-        # Use black and white palette for smallest file size
-        img = img.convert("P", palette=1, colors=2)
+        img = img.convert("P")
     else:
         img = img.convert("RGB")
 
     img_bytes = io.BytesIO()
-    # Optimize for smallest file size
-    img.save(img_bytes, format=image_format, optimize=True)
+    img.save(img_bytes, format=image_format)
     img_bytes.seek(0)
 
     return Response(content=img_bytes.getvalue(), media_type=media_type)
