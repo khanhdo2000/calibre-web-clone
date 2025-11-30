@@ -48,31 +48,44 @@ async def kindle_page(request: Request, key: str = None):
     Works better with Kindle's limited browser.
     Supports ?key=XXXXX parameter to reuse existing device key.
     """
-    device_key = None
+    from fastapi.responses import RedirectResponse
+    from datetime import datetime
 
-    # Try to reuse existing key from URL parameter
+    # Priority: URL parameter > generate new key and redirect
+    # This ensures older Kindles can bookmark the URL with ?key= parameter
     if key:
         key = key.upper()
         existing_session = await cache_service.get(f"kindle_pair:{key}")
         if existing_session:
+            # Reuse existing session and refresh TTL
             device_key = key
-            # Refresh the TTL
             await cache_service.set(
                 f"kindle_pair:{device_key}",
                 existing_session,
                 ttl=SESSION_EXPIRY
             )
-
-    # Generate a new key if needed
-    if not device_key:
+        else:
+            # Key provided but session expired - create new session with same key
+            device_key = key
+            session = PairingSession(
+                device_key=device_key,
+                created_at=datetime.utcnow().isoformat(),
+                selected_books=[]
+            )
+            await cache_service.set(
+                f"kindle_pair:{device_key}",
+                session.model_dump(),
+                ttl=SESSION_EXPIRY
+            )
+    else:
+        # No key provided - generate a new one and redirect to persist it in URL
         device_key = secrets.token_urlsafe(6)[:6].upper()
 
         # Ensure uniqueness
         while await cache_service.get(f"kindle_pair:{device_key}"):
             device_key = secrets.token_urlsafe(6)[:6].upper()
 
-        # Store session in Redis
-        from datetime import datetime
+        # Store new session in Redis
         session = PairingSession(
             device_key=device_key,
             created_at=datetime.utcnow().isoformat(),
@@ -84,6 +97,11 @@ async def kindle_page(request: Request, key: str = None):
             session.model_dump(),
             ttl=SESSION_EXPIRY
         )
+
+        # SERVER-SIDE REDIRECT: This works on all Kindles, even very old ones
+        # After redirect, the URL will have ?key=XXXXX which can be bookmarked
+        redirect_url = f"{request.url.path}?key={device_key}"
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     # Get base URL - use the same protocol as the incoming request
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3003")
@@ -245,9 +263,6 @@ async def kindle_page(request: Request, key: str = None):
                 <h2 style="margin: 0 0 8px 0; font-size: 18px;">Ghép nối thiết bị</h2>
                 <div style="color: #666; font-size: 12px; margin-bottom: 3px;">Mã thiết bị:</div>
                 <div class="device-key" id="deviceKey">{device_key}</div>
-                <div id="keyStatus" style="color: #059669; font-size: 10px; margin-top: 3px; display: none;">
-                    ✓ Đang dùng mã đã lưu
-                </div>
                 <div style="color: #666; font-size: 11px; margin-top: 5px;">
                     Nhập tại: <strong>{frontend_url}/pair</strong>
                 </div>
@@ -281,41 +296,8 @@ async def kindle_page(request: Request, key: str = None):
         var pollInterval = null;
         var lastCheckTime = Date.now();
 
-        // Persist device key in localStorage (with try-catch for older browsers)
-        try {{
-            var STORAGE_KEY = 'kindle_device_key';
-            var storedKey = localStorage.getItem(STORAGE_KEY);
-            var urlParams = new URLSearchParams(window.location.search);
-            var keyParam = urlParams.get('key');
-
-            // If we have a new key and it's different from stored, save it
-            if (DEVICE_KEY && DEVICE_KEY !== storedKey) {{
-                localStorage.setItem(STORAGE_KEY, DEVICE_KEY);
-            }}
-
-            // Show status if using stored key
-            if (keyParam && keyParam === storedKey) {{
-                var statusEl = document.getElementById('keyStatus');
-                if (statusEl) {{
-                    statusEl.style.display = 'block';
-                }}
-            }}
-
-            // If no key in URL but we have a stored key, redirect to use it
-            if (!keyParam && storedKey && storedKey !== DEVICE_KEY) {{
-                window.location.href = window.location.pathname + '?key=' + storedKey;
-            }}
-        }} catch (e) {{
-            // localStorage not available, continue without it
-        }}
-
         function resetDevice() {{
-            try {{
-                localStorage.removeItem('kindle_device_key');
-            }} catch (e) {{
-                // Ignore errors
-            }}
-            // Redirect to get a new key
+            // Redirect to get a new key (server will generate and redirect)
             window.location.href = window.location.pathname;
         }}
 
