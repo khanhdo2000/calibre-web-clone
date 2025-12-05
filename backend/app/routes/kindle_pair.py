@@ -184,12 +184,19 @@ async def check_selected_books(device_key: str):
 
                 # Convert RSS books to the same format as regular books
                 for rss_book in rss_books:
+                    # Build list of available formats
+                    formats = []
+                    if rss_book.mobi_filename:
+                        formats.append("MOBI")
+                    # Always include EPUB as it's always generated
+                    formats.append("EPUB")
+
                     books.append({
                         "id": -rss_book.id,  # Use negative ID to identify as RSS
                         "title": rss_book.title,
                         "authors": [{"name": "RSS Feed"}],
                         "path": f"/api/rss/books/{rss_book.id}/download",
-                        "file_formats": ["MOBI" if rss_book.mobi_filename else "EPUB"],
+                        "file_formats": formats,
                         "is_rss": True
                     })
 
