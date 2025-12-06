@@ -3,13 +3,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { SearchBar } from './SearchBar';
-import { BookOpen, Users, Building2, FolderTree, Menu, X, LogIn, LogOut, User, Home, Sparkles, Folders, Newspaper } from 'lucide-react';
+import { BookOpen, Users, Building2, FolderTree, Menu, X, LogIn, LogOut, User, Home, Sparkles, Folders, Newspaper, Key } from 'lucide-react';
 
 export function Header() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const location = useLocation();
 
   const navItems = [
@@ -64,23 +65,59 @@ export function Header() {
           {/* Auth buttons */}
           <div className="flex items-center gap-2">
             {user ? (
-              <>
-                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700">
+              <div className="relative">
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
                   <User className="w-4 h-4" />
                   <span className="max-w-[150px] truncate">{user.full_name || user.email.split('@')[0]}</span>
-                </div>
+                </button>
+
+                {/* Desktop user dropdown */}
+                {userMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setUserMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                      <Link
+                        to="/change-password"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        <Key className="w-4 h-4" />
+                        <span>{t('auth.changePassword')}</span>
+                      </Link>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => {
+                          logout();
+                          navigate('/');
+                          setUserMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>{t('auth.logout')}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Mobile logout button */}
                 <button
                   onClick={() => {
                     logout();
                     navigate('/');
                   }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="md:hidden flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                   title={t('auth.logout')}
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="hidden md:inline">{t('auth.logout')}</span>
                 </button>
-              </>
+              </div>
             ) : (
               <Link
                 to="/login"
@@ -110,7 +147,7 @@ export function Header() {
               {/* User info section (mobile only) */}
               {user && (
                 <div className="mb-6 pb-4 border-b border-gray-200">
-                  <div className="flex items-center gap-3 px-3 py-2">
+                  <div className="flex items-center gap-3 px-3 py-2 mb-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                       <User className="w-5 h-5 text-blue-600" />
                     </div>
@@ -121,6 +158,14 @@ export function Header() {
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                   </div>
+                  <Link
+                    to="/change-password"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Key className="w-4 h-4" />
+                    <span>{t('i18n.language') === 'vi' ? 'Thay đổi mật khẩu' : 'Change Password'}</span>
+                  </Link>
                 </div>
               )}
 

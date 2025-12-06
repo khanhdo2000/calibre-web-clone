@@ -222,6 +222,72 @@ class AuthService:
         """Invalidate user cache when user data changes"""
         await cache_service.delete(f"user:{user_id}")
 
+    async def create_password_reset_token(self, db: AsyncSession, email: str) -> Optional[User]:
+        """Generate password reset token for a user"""
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            return None
+
+        if not user.is_active:
+            return None
+
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
+        token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        user.reset_token = reset_token
+        user.reset_token_expires = token_expires
+        await db.commit()
+        await db.refresh(user)
+
+        return user
+
+    async def reset_password(self, db: AsyncSession, token: str, new_password: str) -> Optional[User]:
+        """Reset user password with token"""
+        result = await db.execute(
+            select(User).where(User.reset_token == token)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            return None
+
+        # Check if token is expired
+        if user.reset_token_expires and user.reset_token_expires < datetime.now(timezone.utc):
+            return None
+
+        # Update password
+        user.hashed_password = self.get_password_hash(new_password)
+        user.reset_token = None
+        user.reset_token_expires = None
+        await db.commit()
+        await db.refresh(user)
+
+        # Invalidate cache
+        await self.invalidate_user_cache(user.id)
+
+        return user
+
+    async def change_password(
+        self, db: AsyncSession, user: User, old_password: str, new_password: str
+    ) -> bool:
+        """Change user password (requires old password verification)"""
+        # Verify old password
+        if not self.verify_password(old_password, user.hashed_password):
+            return False
+
+        # Update password
+        user.hashed_password = self.get_password_hash(new_password)
+        await db.commit()
+        await db.refresh(user)
+
+        # Invalidate cache
+        await self.invalidate_user_cache(user.id)
+
+        return True
+
 
 # Singleton instance
 auth_service = AuthService()

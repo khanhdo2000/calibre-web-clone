@@ -102,6 +102,16 @@ export function LoginPage() {
                   <p className="text-sm text-green-700">{t('auth.verification.resendSuccess')}</p>
                 </div>
               )}
+              {needsVerification && (
+                <div className="mt-3 text-center">
+                  <Link
+                    to={`/resend-verification${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+                    className="text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    {t('auth.verification.goToResendPage')}
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
@@ -149,6 +159,15 @@ export function LoginPage() {
                 />
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center justify-end">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-blue-600 hover:text-blue-500"
+            >
+                    {t('auth.password.forgot.title')}
+            </Link>
           </div>
 
           <div>

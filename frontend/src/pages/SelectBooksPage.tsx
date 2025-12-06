@@ -140,7 +140,7 @@ export function SelectBooksPage() {
 
       setCategoriesWithBooks(categoriesWithBooksData);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Tải danh mục thất bại');
+      setError(err.response?.data?.detail || 'Tải danh mục không thành công');
     } finally {
       setLoading(false);
     }
@@ -169,7 +169,7 @@ export function SelectBooksPage() {
       setLoading(false);
     } catch (err) {
       console.error('Error fetching books:', err);
-      setError(searchQuery ? 'Tìm kiếm thất bại' : 'Tải sách thất bại');
+      setError(searchQuery ? 'Tìm kiếm không thành công' : 'Tải sách không thành công');
       setLoading(false);
     }
   };
@@ -224,7 +224,7 @@ export function SelectBooksPage() {
         setError('Phiên đã hết hạn. Vui lòng ghép nối lại.');
         setTimeout(() => navigate('/pair'), 2000);
       } else {
-        setError('Gửi sách thất bại. Vui lòng thử lại.');
+        setError('Gửi sách không thành công. Vui lòng thử lại.');
       }
     } finally {
       setSending(false);

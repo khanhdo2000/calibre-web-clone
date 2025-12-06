@@ -20,6 +20,10 @@ import { SelectBooksPage } from './pages/SelectBooksPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
+import { ResendVerificationPage } from './pages/ResendVerificationPage';
 import { RssBooksPage } from './pages/RssBooksPage';
 import { FavoritesPage } from './pages/FavoritesPage';
 
@@ -57,6 +61,7 @@ function MainLayout() {
             <Route path="/categories/:id" element={<CategoryViewPage />} />
             <Route path="/news" element={<RssBooksPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
+            <Route path="/change-password" element={<ChangePasswordPage />} />
           </Routes>
         </main>
       </div>
@@ -73,6 +78,9 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/resend-verification" element={<ResendVerificationPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/read/:id" element={<ReaderPage />} />
             <Route path="/pair" element={<PairPage />} />
             <Route path="/select-books" element={<SelectBooksPage />} />

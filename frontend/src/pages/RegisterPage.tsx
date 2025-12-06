@@ -79,6 +79,8 @@ export function RegisterPage() {
 
   // Show success message after registration
   if (registrationSuccess) {
+    const isVietnamese = t('i18n.language') === 'vi';
+
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
@@ -93,10 +95,29 @@ export function RegisterPage() {
               <p className="text-sm text-green-700">
                 {t('auth.verification.emailSent', { email: registrationSuccess.email })}
               </p>
+              <p className="mt-2 text-sm text-green-700">
+                {isVietnamese
+                  ? 'Liên kết xác thực sẽ hết hạn sau 24 giờ.'
+                  : 'The verification link will expire in 24 hours.'}
+              </p>
             </div>
             <p className="mt-4 text-sm text-gray-600">
               {t('auth.verification.checkSpam')}
             </p>
+
+            {/* Info about resending verification */}
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-700">
+                {t('auth.verification.didntReceive')}
+              </p>
+              <Link
+                to="/resend-verification"
+                className="mt-2 inline-block text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                {t('auth.verification.resendLink')}
+              </Link>
+            </div>
+
             <div className="mt-6">
               <Link
                 to="/login"

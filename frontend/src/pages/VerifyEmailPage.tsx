@@ -90,12 +90,20 @@ export function VerifyEmailPage() {
                 {t('auth.verification.tryAgain')}
               </p>
               <div className="mt-6 space-y-3">
-                <Link
-                  to="/login"
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  {t('auth.verification.backToLogin')}
-                </Link>
+                <div className="flex flex-col gap-2">
+                  <Link
+                    to="/resend-verification"
+                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {t('auth.verification.resendEmail')}
+                  </Link>
+                  <Link
+                    to="/login"
+                    className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {t('auth.verification.backToLogin')}
+                  </Link>
+                </div>
               </div>
             </>
           )}

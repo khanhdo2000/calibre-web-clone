@@ -45,7 +45,7 @@ export function PairPage() {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
         setError('Mã thiết bị không hợp lệ hoặc đã hết hạn');
       } else {
-        setError('Kết nối thất bại. Vui lòng thử lại.');
+        setError('Kết nối không thành công. Vui lòng thử lại.');
       }
       setConnecting(false);
     }

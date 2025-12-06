@@ -59,6 +59,20 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
 class Token(BaseModel):
     access_token: str
     refresh_token: str
@@ -235,6 +249,30 @@ Kho Sách Team
     return {"message": "If the email exists and is not verified, a new verification email has been sent."}
 
 
+@router.get("/check-verification-status")
+async def check_verification_status(
+    email: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Check if an email is registered and verified (for UX purposes only)"""
+    result = await db.execute(select(User).filter(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        # Don't reveal if email doesn't exist
+        return {
+            "exists": False,
+            "verified": False,
+            "needs_verification": False
+        }
+
+    return {
+        "exists": True,
+        "verified": user.email_verified,
+        "needs_verification": not user.email_verified
+    }
+
+
 @router.post("/login", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -242,17 +280,41 @@ async def login(
 ):
     """Login and get access token - uses email as username"""
     # OAuth2PasswordRequestForm uses 'username' field, but we use it for email
-    user = await auth_service.authenticate_user(db, form_data.username, form_data.password)
+    # First, get the user to check verification status before full authentication
+    result = await db.execute(select(User).where(User.email == form_data.username))
+    user = result.scalar_one_or_none()
 
+    # If user doesn't exist, return generic error (don't reveal if email exists)
     if not user:
+        logger.info(f"Login attempt for non-existent email: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check if email is verified
+    logger.info(f"Login attempt for user: {user.email}, verified: {user.email_verified}, active: {user.is_active}")
+
+    # Check password
+    if not auth_service.verify_password(form_data.password, user.hashed_password):
+        logger.info(f"Invalid password for user: {user.email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Check if account is active
+    if not user.is_active:
+        logger.info(f"Inactive account login attempt: {user.email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive. Please contact support."
+        )
+
+    # Check if email is verified (after password check to avoid revealing unverified accounts)
     if not user.email_verified:
+        logger.info(f"Unverified email login attempt: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified. Please check your email for the verification link."
@@ -262,6 +324,7 @@ async def login(
     access_token = auth_service.create_access_token(data={"sub": str(user.id)})
     refresh_token = auth_service.create_refresh_token(data={"sub": str(user.id)})
 
+    logger.info(f"Successful login for user: {user.email}")
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -301,3 +364,88 @@ async def refresh_token(
         "refresh_token": new_refresh_token,
         "token_type": "bearer"
     }
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Request password reset - sends reset email"""
+    user = await auth_service.create_password_reset_token(db, data.email)
+
+    # Don't reveal if email exists or not for security
+    if user:
+        # Send reset email
+        reset_url = f"{settings.frontend_url}/reset-password?token={user.reset_token}"
+
+        email_body = f"""Đặt lại mật khẩu / Password Reset
+---
+
+Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản của mình.
+You have requested to reset your password.
+
+Vui lòng nhấp vào liên kết dưới đây để đặt lại mật khẩu:
+Please click the link below to reset your password:
+
+{reset_url}
+
+Liên kết này sẽ hết hạn sau 1 giờ.
+This link will expire in 1 hour.
+
+Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.
+If you did not request a password reset, please ignore this email.
+
+Trân trọng,
+Best regards,
+Kho Sách Team
+"""
+
+        try:
+            await email_service.send_email(
+                to_email=user.email,
+                subject="Đặt lại mật khẩu - Kho Sách / Password Reset",
+                body=email_body
+            )
+            logger.info(f"Password reset email sent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {e}")
+
+    return {"message": "If the email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Reset password using token"""
+    user = await auth_service.reset_password(db, data.token, data.new_password)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    return {"message": "Password reset successfully", "email": user.email}
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Change password for authenticated user"""
+    success = await auth_service.change_password(
+        db, current_user, data.old_password, data.new_password
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    return {"message": "Password changed successfully"}
