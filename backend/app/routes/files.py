@@ -80,17 +80,16 @@ async def download_book(book_id: int, format: str, db: AsyncSession = Depends(ge
 
         format_upper = format.upper()
 
-        # Check if format exists in Calibre metadata or in cloud storage (PostgreSQL)
+        # Check if format exists in cloud storage (PostgreSQL) - any storage type
         result = await db.execute(
-            select(UploadTracking.file_type).where(
+            select(UploadTracking.file_type, UploadTracking.storage_type).where(
                 UploadTracking.book_id == book_id,
-                UploadTracking.file_type == format_upper,
-                UploadTracking.storage_type == "gdrive"
+                UploadTracking.file_type == format_upper
             )
         )
-        cloud_format = result.scalar_one_or_none()
+        cloud_format_row = result.first()
 
-        if format_upper not in book.file_formats and not cloud_format:
+        if format_upper not in book.file_formats and not cloud_format_row:
             raise HTTPException(
                 status_code=404,
                 detail=f"Format {format_upper} not available for this book"
@@ -187,17 +186,16 @@ async def read_book(book_id: int, format: str, db: AsyncSession = Depends(get_db
 
         format_upper = format.upper()
 
-        # Check if format exists in Calibre metadata or in cloud storage (PostgreSQL)
+        # Check if format exists in cloud storage (PostgreSQL) - any storage type
         result = await db.execute(
-            select(UploadTracking.file_type).where(
+            select(UploadTracking.file_type, UploadTracking.storage_type).where(
                 UploadTracking.book_id == book_id,
-                UploadTracking.file_type == format_upper,
-                UploadTracking.storage_type == "gdrive"
+                UploadTracking.file_type == format_upper
             )
         )
-        cloud_format = result.scalar_one_or_none()
+        cloud_format_row = result.first()
 
-        if format_upper not in book.file_formats and not cloud_format:
+        if format_upper not in book.file_formats and not cloud_format_row:
             raise HTTPException(
                 status_code=404,
                 detail=f"Format {format_upper} not available for this book"
@@ -340,17 +338,16 @@ async def get_book_redirect(book_id: int, format: str, db: AsyncSession = Depend
 
         format_upper = format.upper()
 
-        # Check if format exists in Calibre metadata or in cloud storage (PostgreSQL)
+        # Check if format exists in cloud storage (PostgreSQL) - any storage type
         result_check = await db.execute(
-            select(UploadTracking.file_type).where(
+            select(UploadTracking.file_type, UploadTracking.storage_type).where(
                 UploadTracking.book_id == book_id,
-                UploadTracking.file_type == format_upper,
-                UploadTracking.storage_type == "gdrive"
+                UploadTracking.file_type == format_upper
             )
         )
-        cloud_format = result_check.scalar_one_or_none()
+        cloud_format_row = result_check.first()
 
-        if format_upper not in book.file_formats and not cloud_format:
+        if format_upper not in book.file_formats and not cloud_format_row:
             raise HTTPException(status_code=404, detail=f"Format {format_upper} not available for this book")
 
         # Check if file is in Google Drive
@@ -392,17 +389,16 @@ async def gdrive_direct_link(book_id: int, format: str, db: AsyncSession = Depen
 
         format_upper = format.upper()
 
-        # Check if format exists in Calibre metadata or in cloud storage (PostgreSQL)
+        # Check if format exists in cloud storage (PostgreSQL) - any storage type
         result_check = await db.execute(
-            select(UploadTracking.file_type).where(
+            select(UploadTracking.file_type, UploadTracking.storage_type).where(
                 UploadTracking.book_id == book_id,
-                UploadTracking.file_type == format_upper,
-                UploadTracking.storage_type == "gdrive"
+                UploadTracking.file_type == format_upper
             )
         )
-        cloud_format = result_check.scalar_one_or_none()
+        cloud_format_row = result_check.first()
 
-        if format_upper not in book.file_formats and not cloud_format:
+        if format_upper not in book.file_formats and not cloud_format_row:
             raise HTTPException(status_code=404, detail=f"Format {format_upper} not available for this book")
 
         result = await db.execute(

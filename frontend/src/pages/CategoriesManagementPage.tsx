@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { categoryGroupsApi, metadataApi } from '@/services/api';
 import type { CategoryGroup, Category, CategoryGroupCreate, CategoryGroupUpdate } from '@/types';
-import { Plus, Edit, Trash2, Save, X, FolderTree, GripVertical } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, FolderTree, GripVertical, Search } from 'lucide-react';
 
 export function CategoriesManagementPage() {
   const { t } = useTranslation();
@@ -18,6 +18,7 @@ export function CategoriesManagementPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [tagFilter, setTagFilter] = useState('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -74,6 +75,7 @@ export function CategoriesManagementPage() {
     setIsCreating(false);
     setEditingId(null);
     setFormData({ name: '', description: '', tag_ids: [] });
+    setTagFilter('');
   };
 
   const handleSave = async () => {
@@ -126,6 +128,26 @@ export function CategoriesManagementPage() {
         : [...prev.tag_ids, tagId],
     }));
   };
+
+  // Normalize Vietnamese text by removing diacritics
+  const normalizeVietnamese = (str: string): string => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase();
+  };
+
+  // Filter tags based on search query (supports Vietnamese without diacritics)
+  const filteredTags = allTags.filter(tag => {
+    if (tag.id === -1) return false;
+
+    const normalizedTagName = normalizeVietnamese(tag.name);
+    const normalizedFilter = normalizeVietnamese(tagFilter);
+
+    return normalizedTagName.includes(normalizedFilter);
+  });
 
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
@@ -240,12 +262,39 @@ export function CategoriesManagementPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {t('categories.management.selectTags')}
               </label>
+
+              {/* Search/Filter Input */}
+              <div className="relative mb-3">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder={t('i18n.language') === 'vi' ? 'Tìm kiếm thẻ...' : 'Search tags...'}
+                />
+                {tagFilter && (
+                  <button
+                    onClick={() => setTagFilter('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+
               <div className="border border-gray-300 rounded-lg p-4 max-h-64 overflow-y-auto">
                 {allTags.length === 0 ? (
                   <p className="text-gray-500 text-sm">{t('categories.management.noTags')}</p>
+                ) : filteredTags.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-4">
+                    {t('i18n.language') === 'vi' ? 'Không tìm thấy thẻ nào' : 'No tags found'}
+                  </p>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {allTags.filter(tag => tag.id !== -1).map((tag) => (
+                    {filteredTags.map((tag) => (
                       <label key={tag.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
                         <input
                           type="checkbox"
@@ -262,9 +311,18 @@ export function CategoriesManagementPage() {
                   </div>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-2">
-                {t('categories.management.selectedCount', { count: formData.tag_ids.length })}
-              </p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-sm text-gray-500">
+                  {t('categories.management.selectedCount', { count: formData.tag_ids.length })}
+                </p>
+                {tagFilter && (
+                  <p className="text-xs text-gray-500">
+                    {t('i18n.language') === 'vi'
+                      ? `Hiển thị ${filteredTags.length} / ${allTags.filter(tag => tag.id !== -1).length} thẻ`
+                      : `Showing ${filteredTags.length} / ${allTags.filter(tag => tag.id !== -1).length} tags`}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3 pt-4">

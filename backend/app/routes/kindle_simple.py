@@ -321,23 +321,12 @@ async def kindle_page(request: Request, key: str = None):
         function getDownloadUrl(bookId, formats) {{
             var format = null;
 
-            if (isKindle()) {{
-                // Kindle browser only supports MOBI, PRC, AZW, and AZW3
-                var preferred = ['MOBI', 'PRC', 'AZW3', 'AZW'];
-                for (var i = 0; i < preferred.length; i++) {{
-                    if (formats.indexOf(preferred[i]) !== -1) {{
-                        format = preferred[i];
-                        break;
-                    }}
-                }}
-            }} else {{
-                // Non-Kindle browsers: prefer EPUB, then MOBI/PRC
-                var preferred = ['EPUB', 'MOBI', 'PRC', 'AZW3', 'AZW', 'PDF'];
-                for (var i = 0; i < preferred.length; i++) {{
-                    if (formats.indexOf(preferred[i]) !== -1) {{
-                        format = preferred[i];
-                        break;
-                    }}
+            // Always prioritize MOBI format for all devices
+            var preferred = ['MOBI', 'AZW3', 'AZW', 'PRC', 'EPUB', 'PDF'];
+            for (var i = 0; i < preferred.length; i++) {{
+                if (formats.indexOf(preferred[i]) !== -1) {{
+                    format = preferred[i];
+                    break;
                 }}
             }}
 

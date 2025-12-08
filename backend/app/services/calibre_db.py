@@ -678,9 +678,9 @@ async def get_books_by_ids(book_ids: List[int]) -> List[Book]:
     cloud_formats_map = {}
     async with async_session_maker() as db_session:
         result = await db_session.execute(
-            select(UploadTracking.book_id, UploadTracking.file_type).filter(
+            select(UploadTracking.book_id, UploadTracking.file_type).where(
                 UploadTracking.book_id.in_(book_ids),
-                UploadTracking.file_type != 'cover'
+                UploadTracking.file_type.notin_(['cover', 'cover_thumb'])
             )
         )
         cloud_formats = result.all()

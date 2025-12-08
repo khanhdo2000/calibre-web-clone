@@ -36,6 +36,16 @@ export function CompactList<T>({
   const { t } = useTranslation();
   const [selectedChar, setSelectedChar] = useState<string | null>(null);
 
+  // Normalize Vietnamese text by removing diacritics
+  const normalizeVietnamese = (str: string): string => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase();
+  };
+
   // Generate alphabet filter list from items
   const alphabetChars = useMemo(() => {
     const chars = new Set<string>();
@@ -51,11 +61,14 @@ export function CompactList<T>({
     return Array.from(chars).sort();
   }, [items, getName]);
 
-  // Filter items by search term and alphabet
+  // Filter items by search term and alphabet (supports Vietnamese without diacritics)
   const filteredItems = useMemo(() => {
-    let result = items.filter((item) =>
-      getName(item).toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let result = items.filter((item) => {
+      const name = getName(item);
+      const normalizedName = normalizeVietnamese(name);
+      const normalizedSearch = normalizeVietnamese(searchTerm);
+      return normalizedName.includes(normalizedSearch);
+    });
 
     if (selectedChar) {
       result = result.filter((item) => {
