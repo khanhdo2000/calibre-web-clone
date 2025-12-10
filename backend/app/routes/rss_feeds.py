@@ -1,20 +1,25 @@
 """RSS Feeds API routes"""
 import os
+import logging
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, EmailStr
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.rss_feed import RssFeed, RssGeneratedBook
+from app.models.user import User
 from app.services.rss_epub import RssFetcher, EpubGenerator
 from app.services.rss_epub.scheduler import get_rss_scheduler
+from app.services.email import email_service
+from app.routes.auth import get_current_user
 
 router = APIRouter(prefix="/api/rss", tags=["RSS Feeds"])
+logger = logging.getLogger(__name__)
 
 
 # Pydantic schemas
@@ -342,3 +347,116 @@ async def preview_feed(
         }
     finally:
         fetcher.close()
+
+
+class SendRssToKindleRequest(BaseModel):
+    rss_book_id: int
+    kindle_email: Optional[EmailStr] = None  # Override user's default Kindle email
+    format: str = "epub"  # epub or mobi
+
+
+class SendRssToKindleResponse(BaseModel):
+    success: bool
+    message: str
+    kindle_email: str
+
+
+@router.post("/books/{book_id}/send-to-kindle", response_model=SendRssToKindleResponse)
+async def send_rss_book_to_kindle(
+    book_id: int,
+    kindle_email: Optional[EmailStr] = None,
+    format: str = Query("epub", regex="^(epub|mobi)$"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Send an RSS-generated book to Kindle via email.
+
+    Supports both EPUB and MOBI formats (if MOBI was generated).
+
+    Args:
+        book_id: ID of the RSS-generated book
+        kindle_email: Optional Kindle email (uses user's default if not provided)
+        format: Format to send (epub or mobi, default: epub)
+
+    Returns:
+        SendRssToKindleResponse with success status and message
+    """
+    # Check if email service is configured
+    if not email_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email service is not configured. Please contact administrator."
+        )
+
+    # Determine Kindle email to use
+    target_email = kindle_email or current_user.kindle_email
+    if not target_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Kindle email not set. Please set your Kindle email in settings or provide it in the request."
+        )
+
+    # Validate Kindle email format
+    if not email_service.is_kindle_email(target_email):
+        logger.warning(f"Email {target_email} does not appear to be a Kindle email address")
+
+    # Get RSS book information
+    result = await db.execute(
+        select(RssGeneratedBook).where(RssGeneratedBook.id == book_id)
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="RSS book not found"
+        )
+
+    # Determine file path based on format
+    if format == "mobi":
+        if not book.mobi_file_path or not os.path.exists(book.mobi_file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="MOBI format not available for this book. Try EPUB format instead."
+            )
+        book_path = book.mobi_file_path
+        filename = book.mobi_filename
+    else:  # epub
+        if not os.path.exists(book.file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="EPUB file not found on disk"
+            )
+        book_path = book.file_path
+        filename = book.filename
+
+    # Send to Kindle
+    try:
+        success = await email_service.send_to_kindle(
+            to_email=target_email,
+            book_path=book_path,
+            book_title=book.title,
+            format=format.upper()
+        )
+
+        if success:
+            logger.info(f"RSS book '{book.title}' sent to Kindle at {target_email}")
+            return SendRssToKindleResponse(
+                success=True,
+                message=f"Book '{book.title}' ({format.upper()}) sent successfully to {target_email}",
+                kindle_email=target_email
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send book to Kindle. Please check email service configuration."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending RSS book to Kindle: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error sending book to Kindle: {str(e)}"
+        )

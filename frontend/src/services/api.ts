@@ -286,6 +286,17 @@ export const rssBooksApi = {
     const response = await api.post(`/rss/generate/${feedId}`);
     return response.data;
   },
+
+  sendToKindle: async (
+    bookId: number,
+    format: 'epub' | 'mobi' = 'epub',
+    kindleEmail?: string
+  ): Promise<{ success: boolean; message: string; kindle_email: string }> => {
+    const params: { format: string; kindle_email?: string } = { format };
+    if (kindleEmail) params.kindle_email = kindleEmail;
+    const response = await api.post(`/rss/books/${bookId}/send-to-kindle`, null, { params });
+    return response.data;
+  },
 };
 
 // Favorites API

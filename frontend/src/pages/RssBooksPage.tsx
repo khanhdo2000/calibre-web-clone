@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { rssBooksApi, type RssFeed, type RssGeneratedBook } from '@/services/api';
-import { Newspaper, Download, Calendar, FileText, RefreshCw } from 'lucide-react';
+import { Newspaper, Download, Calendar, FileText, RefreshCw, Send } from 'lucide-react';
 
 export function RssBooksPage() {
   const { t } = useTranslation();
@@ -10,7 +10,9 @@ export function RssBooksPage() {
   const [selectedFeed, setSelectedFeed] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<number | null>(null);
+  const [sending, setSending] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -48,13 +50,31 @@ export function RssBooksPage() {
 
   const handleGenerate = async (feedId: number) => {
     setGenerating(feedId);
+    setError(null);
+    setSuccessMessage(null);
     try {
       await rssBooksApi.generateFeed(feedId);
       await loadBooks();
+      setSuccessMessage('EPUB đã được tạo thành công!');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate EPUB');
     } finally {
       setGenerating(null);
+    }
+  };
+
+  const handleSendToKindle = async (bookId: number, format: 'epub' | 'mobi' = 'epub') => {
+    setSending(bookId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const result = await rssBooksApi.sendToKindle(bookId, format);
+      setSuccessMessage(result.message);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || 'Không thể gửi đến Kindle';
+      setError(errorMsg);
+    } finally {
+      setSending(null);
     }
   };
 
@@ -98,6 +118,12 @@ export function RssBooksPage() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
           {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6">
+          {successMessage}
         </div>
       )}
 
@@ -177,13 +203,24 @@ export function RssBooksPage() {
                     </span>
                   </div>
                 </div>
-                <a
-                  href={rssBooksApi.getDownloadUrl(book.id)}
-                  className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  T&#7843;i xu&#7889;ng
-                </a>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSendToKindle(book.id, 'epub')}
+                    disabled={sending === book.id}
+                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Gửi EPUB đến Kindle"
+                  >
+                    <Send className={`w-4 h-4 ${sending === book.id ? 'animate-pulse' : ''}`} />
+                    {sending === book.id ? 'Đang gửi...' : 'Kindle'}
+                  </button>
+                  <a
+                    href={rssBooksApi.getDownloadUrl(book.id)}
+                    className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    T&#7843;i xu&#7889;ng
+                  </a>
+                </div>
               </div>
             </div>
           ))}
