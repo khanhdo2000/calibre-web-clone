@@ -5,8 +5,35 @@ from app.routes.kindle_pair import PairingSession, SESSION_EXPIRY
 import secrets
 import os
 import random
+import qrcode
+import io
+import base64
 
 router = APIRouter(prefix="/kindle", tags=["Kindle"])
+
+
+def generate_qr_code_base64(data: str) -> str:
+    """Generate QR code and return as base64 data URI for inline embedding."""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    # Use GIF format for maximum Kindle browser compatibility
+    img = img.convert("P")
+
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="GIF")
+    img_bytes.seek(0)
+
+    b64_data = base64.b64encode(img_bytes.getvalue()).decode("ascii")
+    return f"data:image/gif;base64,{b64_data}"
+
 
 MOTIVATIONAL_QUOTES = [
     # Book-related quotes
@@ -114,7 +141,8 @@ async def kindle_page(request: Request, key: str = None):
     api_base = f"{scheme}://{host}"
 
     pair_url = f"{frontend_url}/pair?key={device_key}"
-    qr_code_url = f"{api_base}/api/kindle-pair/qr-code/{device_key}"
+    # Generate QR code as inline base64 data URI - avoids external image loading issues on Kindle browsers
+    qr_code_data_uri = generate_qr_code_base64(pair_url)
     check_url = f"{api_base}/api/kindle-pair/check-books/{device_key}"
 
     # Get random motivational quote
@@ -259,7 +287,7 @@ async def kindle_page(request: Request, key: str = None):
         <div style="overflow: hidden;">
             <div style="float: right; text-align: center; margin-left: 15px;">
                 <div style="color: #666; font-size: 11px; margin-bottom: 3px;">Quét QR:</div>
-                <img src="{qr_code_url}" alt="QR Code" style="width: 180px; max-width: 75vw; border: 2px solid #000;">
+                <img src="{qr_code_data_uri}" alt="QR Code" width="180" height="180" style="width: 180px; max-width: 75vw; border: 2px solid #000;">
             </div>
             <div style="overflow: hidden;">
                 <h2 style="margin: 0 0 8px 0; font-size: 18px;">Ghép nối thiết bị</h2>
